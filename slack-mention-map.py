@@ -23,7 +23,7 @@ def create_html_template():
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>Slackメンション関係 サンキーダイアグラム</title>
+    <title>Slack メンション分析ダッシュボード</title>
     <script src="https://cdn.plot.ly/plotly-2.29.1.min.js"></script>
     <style>
         body {
@@ -42,6 +42,13 @@ def create_html_template():
         h1 {
             color: #1D9BD1;
             text-align: center;
+            margin-bottom: 10px;
+        }
+        .subtitle {
+            text-align: center;
+            color: #666;
+            margin-bottom: 20px;
+            font-size: 1.1em;
         }
         .info {
             margin-bottom: 20px;
@@ -49,9 +56,10 @@ def create_html_template():
             background-color: #f0f0f0;
             border-radius: 4px;
         }
-        #sankey {
+        #sankey, #heatmap {
             width: 100%;
             height: 750px;
+            margin-bottom: 30px;
         }
         .button-container {
             margin-top: 20px;
@@ -99,11 +107,38 @@ def create_html_template():
             font-size: 12px;
             color: #666;
         }
+        .tab-container {
+            margin-bottom: 20px;
+        }
+        .tab-buttons {
+            display: flex;
+            justify-content: center;
+            margin-bottom: 20px;
+        }
+        .tab-button {
+            padding: 10px 20px;
+            margin: 0 5px;
+            border: none;
+            background-color: #f0f0f0;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .tab-button.active {
+            background-color: #1D9BD1;
+            color: white;
+        }
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
+        }
     </style>
 </head>
 <body>
     <div class="container">
-        <h1>Slackメンション関係 サンキーダイアグラム</h1>
+        <h1>Slack メンション分析ダッシュボード</h1>
+        <div class="subtitle" id="subtitle">データを読み込み中...</div>
         <div class="legend">
             <div class="legend-item">
                 <div class="legend-color" style="background-color: rgba(100, 149, 237, 0.8);"></div>
@@ -123,17 +158,51 @@ def create_html_template():
             </div>
         </div>
         <div class="info" id="info">データを読み込み中...</div>
-        <div id="sankey"></div>
+        
+        <div class="tab-container">
+            <div class="tab-buttons">
+                <button class="tab-button active" data-tab="sankey-tab">メンション関係図</button>
+                <button class="tab-button" data-tab="heatmap-tab">投稿頻度ヒートマップ</button>
+            </div>
+            <div id="sankey-tab" class="tab-content active">
+                <div id="sankey"></div>
+            </div>
+            <div id="heatmap-tab" class="tab-content">
+                <div id="heatmap"></div>
+            </div>
+        </div>
+
         <div class="button-container">
             <button id="download" class="btn">画像をダウンロード</button>
             <button id="help" class="btn btn-help">使い方を見る</button>
         </div>
         <div class="footer">
-            このサンキーダイアグラムは対話型です。ノードをドラッグして移動したり、ホバーして詳細を表示できます。
+            このダッシュボードは対話型です。ノードをドラッグして移動したり、ホバーして詳細を表示できます。
         </div>
     </div>
 
     <script>
+        // グローバル変数としてdataを定義
+        let globalData = null;
+
+        // タブ切り替え機能
+        document.querySelectorAll('.tab-button').forEach(button => {
+            button.addEventListener('click', () => {
+                // アクティブなタブボタンを更新
+                document.querySelectorAll('.tab-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                button.classList.add('active');
+
+                // タブコンテンツを切り替え
+                const tabId = button.getAttribute('data-tab');
+                document.querySelectorAll('.tab-content').forEach(content => {
+                    content.classList.remove('active');
+                });
+                document.getElementById(tabId).classList.add('active');
+            });
+        });
+
         // ヘルプモーダルを表示する関数
         const showGuide = () => {
             const modal = document.createElement('div');
@@ -164,12 +233,14 @@ def create_html_template():
                     <li>ノードをドラッグして自由に配置できます</li>
                     <li>マウスを重ねると詳細情報が表示されます</li>
                     <li>「画像をダウンロード」ボタンで保存できます</li>
+                    <li>タブでサンキーダイアグラムとヒートマップを切り替えられます</li>
                 </ul>
                 <p><strong>ヒント</strong>:</p>
                 <ul>
                     <li>見やすい配置になるようノードを整理してみましょう</li>
                     <li>関連性の強いノード同士を近くに配置すると分かりやすくなります</li>
                     <li>特に太い線に注目すると主要なコミュニケーションの流れが分かります</li>
+                    <li>ヒートマップで投稿頻度の多い時期を確認できます</li>
                 </ul>
                 <button id="close-modal" style="padding:8px 16px; background:#1D9BD1; color:white; border:none; border-radius:4px; cursor:pointer; float:right">閉じる</button>
                 <div style="clear:both"></div>
@@ -190,15 +261,97 @@ def create_html_template():
         };
     
         // データをフェッチする
-        fetch('/data')
-            .then(response => response.json())
-            .then(data => {
+        async function fetchData() {
+            try {
+                const response = await fetch('/data');
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+                const data = await response.json();
+                
+                // データの検証
+                if (!data || !data.mention_data || !data.heatmap_data) {
+                    throw new Error('Invalid data format received');
+                }
+
+                // グローバル変数にデータを保存
+                globalData = data;
+
                 // 情報テキストを更新
                 document.getElementById('info').textContent = 
                     `チャンネル: #${data.channel_name} / 期間: 過去${data.days}日間 / 生成日時: ${new Date(data.timestamp * 1000).toLocaleString()}`;
                 
-                const mentionData = data.mention_data;
+                // サブタイトルを更新
+                document.getElementById('subtitle').textContent = 
+                    `#${data.channel_name} のメンション分析（過去${data.days}日間）`;
                 
+                // ページタイトルを更新
+                document.title = `#${data.channel_name} - Slack メンション分析ダッシュボード`;
+                
+                // サンキーダイアグラムの作成
+                createSankeyDiagram(data.mention_data);
+                
+                // ヒートマップの作成
+                createHeatmap(data.heatmap_data);
+                
+                // ダウンロードボタンの設定
+                document.getElementById('download').addEventListener('click', function() {
+                    const activeTab = document.querySelector('.tab-content.active');
+                    const plotId = activeTab.querySelector('div').id;
+                    Plotly.downloadImage(plotId, {
+                        format: 'png',
+                        filename: `slack_${plotId}_${data.channel_name}`,
+                        width: 1200,
+                        height: 800,
+                        scale: 2
+                    });
+                });
+                
+                // ヘルプボタンの設定
+                document.getElementById('help').addEventListener('click', showGuide);
+                
+                // 最初にガイドを表示
+                setTimeout(showGuide, 1000);
+
+            } catch (error) {
+                console.error('データ取得エラー:', error);
+                document.getElementById('info').textContent = `エラー: ${error.message}`;
+                
+                // エラーメッセージを表示
+                const errorDiv = document.createElement('div');
+                errorDiv.style.color = 'red';
+                errorDiv.style.padding = '10px';
+                errorDiv.style.margin = '10px 0';
+                errorDiv.style.backgroundColor = '#ffeeee';
+                errorDiv.style.border = '1px solid #ffcccc';
+                errorDiv.style.borderRadius = '4px';
+                errorDiv.innerHTML = `
+                    <h3>データの読み込みに失敗しました</h3>
+                    <p>エラーの詳細: ${error.message}</p>
+                    <p>以下の点を確認してください：</p>
+                    <ul>
+                        <li>アプリケーションが正常に動作しているか</li>
+                        <li>インターネット接続が安定しているか</li>
+                        <li>ブラウザを更新してみる</li>
+                    </ul>
+                    <button onclick="window.location.reload()" style="padding: 8px 16px; background: #1D9BD1; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                        ページを更新
+                    </button>
+                `;
+                document.querySelector('.container').insertBefore(errorDiv, document.querySelector('.tab-container'));
+            }
+        }
+
+        // ページ読み込み時にデータを取得
+        fetchData();
+
+        // サンキーダイアグラムを作成する関数
+        function createSankeyDiagram(mentionData) {
+            try {
+                if (!globalData) {
+                    throw new Error('データが読み込まれていません');
+                }
+
                 // 送信者と受信者のリストを作成
                 const senders = new Set();
                 const receivers = new Set();
@@ -272,7 +425,7 @@ def create_html_template():
                 // レイアウトの設定
                 const layout = {
                     title: {
-                        text: `チャンネル #${data.channel_name} のメンション関係（過去${data.days}日間）`,
+                        text: `チャンネル #${globalData.channel_name} のメンション関係（過去${globalData.days}日間）`,
                         font: {
                             size: 20,
                             family: "Hiragino Kaku Gothic Pro, メイリオ, sans-serif"
@@ -290,28 +443,81 @@ def create_html_template():
 
                 // プロット作成
                 Plotly.newPlot('sankey', plotData, layout);
-                
-                // ダウンロードボタンの設定
-                document.getElementById('download').addEventListener('click', function() {
-                    Plotly.downloadImage('sankey', {
-                        format: 'png',
-                        filename: `slack_mentions_${data.channel_name}`,
-                        width: 1200,
-                        height: 800,
-                        scale: 2
-                    });
+            } catch (error) {
+                console.error('サンキーダイアグラム作成エラー:', error);
+                throw error;
+            }
+        }
+
+        // ヒートマップを作成する関数
+        function createHeatmap(heatmapData) {
+            try {
+                if (!globalData) {
+                    throw new Error('データが読み込まれていません');
+                }
+
+                // 日付の範囲を取得
+                const dates = new Set();
+                Object.values(heatmapData).forEach(userData => {
+                    Object.keys(userData).forEach(date => dates.add(date));
                 });
-                
-                // ヘルプボタンの設定
-                document.getElementById('help').addEventListener('click', showGuide);
-                
-                // 最初にガイドを表示
-                setTimeout(showGuide, 1000);
-            })
-            .catch(error => {
-                console.error('データ取得エラー:', error);
-                document.getElementById('info').textContent = 'エラー: データの読み込みに失敗しました';
-            });
+                const sortedDates = Array.from(dates).sort();
+
+                // ユーザーリストを作成
+                const users = Object.keys(heatmapData).sort();
+
+                // ヒートマップのデータを作成
+                const z = users.map(user => 
+                    sortedDates.map(date => heatmapData[user][date] || 0)
+                );
+
+                // ヒートマップのデータ
+                const plotData = [{
+                    type: 'heatmap',
+                    z: z,
+                    x: sortedDates,
+                    y: users,
+                    colorscale: 'Viridis',
+                    showscale: true,
+                    colorbar: {
+                        title: '投稿数',
+                        titleside: 'right'
+                    }
+                }];
+
+                // レイアウトの設定
+                const layout = {
+                    title: {
+                        text: `チャンネル #${globalData.channel_name} の投稿頻度（過去${globalData.days}日間）`,
+                        font: {
+                            size: 20,
+                            family: "Hiragino Kaku Gothic Pro, メイリオ, sans-serif"
+                        }
+                    },
+                    width: 1200,
+                    height: 800,
+                    font: {
+                        size: 12,
+                        family: "Hiragino Kaku Gothic Pro, メイリオ, sans-serif"
+                    },
+                    paper_bgcolor: 'rgba(255,255,255,1)',
+                    plot_bgcolor: 'rgba(255,255,255,1)',
+                    xaxis: {
+                        title: '日付',
+                        tickangle: -45
+                    },
+                    yaxis: {
+                        title: 'ユーザー'
+                    }
+                };
+
+                // プロット作成
+                Plotly.newPlot('heatmap', plotData, layout);
+            } catch (error) {
+                console.error('ヒートマップ作成エラー:', error);
+                throw error;
+            }
+        }
     </script>
 </body>
 </html>
@@ -347,6 +553,7 @@ HTTP_PORT = 8000
 # データ保存用のグローバル変数
 global_data = {
     "mention_data": None,
+    "heatmap_data": None,
     "channel_name": None,
     "days": 30,
     "timestamp": None,
@@ -374,23 +581,46 @@ class SankeyHandler(http.server.SimpleHTTPRequestHandler):
 
         elif self.path == "/data":
             print("Serving data")  # データ提供のログ
-            self.send_response(200)
-            self.send_header("Content-type", "application/json; charset=utf-8")
-            self.end_headers()
-
-            # メンションデータをJSON形式で送信
             try:
+                # データの準備
                 data = {
                     "mention_data": global_data["mention_data"],
+                    "heatmap_data": global_data["heatmap_data"],
                     "channel_name": global_data["channel_name"],
                     "days": global_data["days"],
                     "timestamp": global_data["timestamp"],
                 }
-                print(f"Data to be sent: {json.dumps(data, ensure_ascii=False)[:200]}...")  # データの一部をログ出力
-                self.wfile.write(json.dumps(data, ensure_ascii=False).encode("utf-8"))
-                print("Data sent successfully")  # 成功ログ
+
+                # データの検証
+                if not all(data.values()):
+                    print("Warning: Some data is missing or None")
+                    print(f"Data state: {data}")
+
+                # JSONデータの準備
+                json_data = json.dumps(data, ensure_ascii=False)
+                encoded_data = json_data.encode('utf-8')
+
+                # レスポンスヘッダーの設定
+                self.send_response(200)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(encoded_data)))
+                self.send_header("Access-Control-Allow-Origin", "*")  # CORSヘッダーの追加
+                self.end_headers()
+
+                # データの送信
+                self.wfile.write(encoded_data)
+                print(f"Data sent successfully: {len(encoded_data)} bytes")
+                print(f"Data preview: {json_data[:200]}...")
+
             except Exception as e:
-                print(f"Error serving data: {str(e)}")  # エラーログ
+                print(f"Error serving data: {str(e)}")
+                # エラーレスポンスの送信
+                error_response = json.dumps({"error": str(e)}, ensure_ascii=False).encode('utf-8')
+                self.send_response(500)
+                self.send_header("Content-type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(error_response)))
+                self.end_headers()
+                self.wfile.write(error_response)
         else:
             # その他のファイルはデフォルト処理
             print(f"Serving other file: {self.path}")  # その他のファイルのログ
@@ -515,7 +745,7 @@ def mention_map_command(ack, command, client):
         )
 
         # メンション関係を分析
-        mention_data = analyze_mentions(result, client, thread_ts, dm_channel_id)
+        mention_data, heatmap_data = analyze_mentions(result, client, thread_ts, dm_channel_id)
 
         # 進捗報告
         client.chat_postMessage(
@@ -530,6 +760,7 @@ def mention_map_command(ack, command, client):
 
         # グローバル変数にデータを格納
         global_data["mention_data"] = mention_data
+        global_data["heatmap_data"] = heatmap_data
         global_data["channel_name"] = channel_name
         global_data["days"] = days
         global_data["timestamp"] = datetime.now().timestamp()
@@ -539,14 +770,17 @@ def mention_map_command(ack, command, client):
 
         # 完了メッセージ
         message = f"""
-分析が完了しました！サンキーダイアグラムを表示するには以下のリンクを開いてください：
+分析が完了しました！メンション分析ダッシュボードを表示するには以下のリンクを開いてください：
 
-<{browser_url}|ブラウザでサンキーダイアグラムを表示>
+<{browser_url}|ブラウザで表示>
 
-このブラウザでは：
-• ダイアグラムを自由に操作できます（ノードのドラッグ、ホバー表示など）
+このダッシュボードでは：
+• メンション関係図と投稿頻度ヒートマップを切り替えて表示できます
+• グラフを自由に操作できます（ノードのドラッグ、ホバー表示など）
 • 「画像をダウンロード」ボタンから高解像度画像を保存できます
 • 保存した画像をSlackにアップロードして共有できます
+
+分析対象チャンネル: <#{channel_id}>
 
 ブラウザが自動的に開かない場合は、上記のリンクをクリックするか、手動でブラウザを開いて次のURLにアクセスしてください：
 {browser_url}
@@ -624,77 +858,111 @@ def get_channel_history(
 def analyze_mentions(messages, client, thread_ts=None, dm_channel_id=None):
     """メッセージからメンション関係を分析、進捗も報告"""
     mention_count = {}  # {送信者: {メンション先: 回数}}
+    heatmap_data = {}   # {ユーザー: {日付: 投稿数}}
 
     # ユーザー情報のキャッシュ
     user_cache = {}
     total_messages = len(messages)
     progress_interval = max(1, total_messages // 10)  # 10%ごとに進捗報告
 
-    for i, message in enumerate(messages):
-        # 進捗報告
-        if thread_ts and dm_channel_id and (i % progress_interval == 0):
-            progress_percent = (i / total_messages) * 100
+    try:
+        for i, message in enumerate(messages):
+            # 進捗報告
+            if thread_ts and dm_channel_id and (i % progress_interval == 0):
+                progress_percent = (i / total_messages) * 100
+                client.chat_postMessage(
+                    channel=dm_channel_id,
+                    thread_ts=thread_ts,
+                    text=f"分析進捗: {i}/{total_messages} メッセージ処理済み ({progress_percent:.1f}%)",
+                )
+
+            # botのメッセージは無視
+            if message.get("subtype") == "bot_message" or not message.get("user"):
+                continue
+
+            sender_id = message["user"]
+
+            # ユーザー名をキャッシュから取得（なければAPI呼び出し）
+            if sender_id not in user_cache:
+                try:
+                    user_info = client.users_info(user=sender_id)
+                    user_cache[sender_id] = user_info["user"]["real_name"]
+                except Exception as e:
+                    print(f"Warning: Could not get user info for {sender_id}: {str(e)}")
+                    user_cache[sender_id] = f"User {sender_id}"
+
+            sender_name = user_cache[sender_id]
+
+            # このユーザーのメンションカウントを初期化
+            if sender_name not in mention_count:
+                mention_count[sender_name] = {}
+
+            # ヒートマップデータの初期化
+            if sender_name not in heatmap_data:
+                heatmap_data[sender_name] = {}
+
+            # メッセージの日付を取得
+            try:
+                message_date = datetime.fromtimestamp(float(message["ts"])).strftime("%Y-%m-%d")
+                if message_date not in heatmap_data[sender_name]:
+                    heatmap_data[sender_name][message_date] = 0
+                heatmap_data[sender_name][message_date] += 1
+            except Exception as e:
+                print(f"Warning: Could not process timestamp for message: {str(e)}")
+                continue
+
+            # メッセージ本文からメンションを抽出
+            if "text" in message:
+                mentions = mention_pattern.findall(message["text"])
+
+                # メンションがない場合はN/Aを追加
+                if not mentions:
+                    if "N/A" not in mention_count[sender_name]:
+                        mention_count[sender_name]["N/A"] = 0
+                    mention_count[sender_name]["N/A"] += 1
+                else:
+                    for mention_id in mentions:
+                        # メンション先のユーザー名を取得
+                        if mention_id not in user_cache:
+                            try:
+                                user_info = client.users_info(user=mention_id)
+                                user_cache[mention_id] = user_info["user"]["real_name"]
+                            except Exception as e:
+                                print(f"Warning: Could not get user info for mention {mention_id}: {str(e)}")
+                                user_cache[mention_id] = f"User {mention_id}"
+
+                        mention_name = user_cache[mention_id]
+
+                        # メンションカウントを更新
+                        if mention_name not in mention_count[sender_name]:
+                            mention_count[sender_name][mention_name] = 0
+                        mention_count[sender_name][mention_name] += 1
+
+        # 最終進捗報告
+        if thread_ts and dm_channel_id:
             client.chat_postMessage(
                 channel=dm_channel_id,
                 thread_ts=thread_ts,
-                text=f"分析進捗: {i}/{total_messages} メッセージ処理済み ({progress_percent:.1f}%)",
+                text=f"分析完了: 全 {total_messages} メッセージの処理が終了しました！",
             )
 
-        # botのメッセージは無視
-        if message.get("subtype") == "bot_message" or not message.get("user"):
-            continue
+        # データの検証
+        if not mention_count or not heatmap_data:
+            print("Warning: No data was collected during analysis")
+            print(f"Mention count: {mention_count}")
+            print(f"Heatmap data: {heatmap_data}")
 
-        sender_id = message["user"]
+        return mention_count, heatmap_data
 
-        # ユーザー名をキャッシュから取得（なければAPI呼び出し）
-        if sender_id not in user_cache:
-            try:
-                user_info = client.users_info(user=sender_id)
-                user_cache[sender_id] = user_info["user"]["real_name"]
-            except:
-                user_cache[sender_id] = f"User {sender_id}"
-
-        sender_name = user_cache[sender_id]
-
-        # このユーザーのメンションカウントを初期化
-        if sender_name not in mention_count:
-            mention_count[sender_name] = {}
-
-        # メッセージ本文からメンションを抽出
-        if "text" in message:
-            mentions = mention_pattern.findall(message["text"])
-
-            # メンションがない場合はN/Aを追加
-            if not mentions:
-                if "N/A" not in mention_count[sender_name]:
-                    mention_count[sender_name]["N/A"] = 0
-                mention_count[sender_name]["N/A"] += 1
-            else:
-                for mention_id in mentions:
-                    # メンション先のユーザー名を取得
-                    if mention_id not in user_cache:
-                        try:
-                            user_info = client.users_info(user=mention_id)
-                            user_cache[mention_id] = user_info["user"]["real_name"]
-                        except:
-                            user_cache[mention_id] = f"User {mention_id}"
-
-                    mention_name = user_cache[mention_id]
-
-                    # メンションカウントを更新
-                    if mention_name not in mention_count[sender_name]:
-                        mention_count[sender_name][mention_name] = 0
-                    mention_count[sender_name][mention_name] += 1
-
-    # 最終進捗報告
-    if thread_ts and dm_channel_id:
-        client.chat_postMessage(
-            channel=dm_channel_id,
-            thread_ts=thread_ts,
-            text=f"分析完了: 全 {total_messages} メッセージの処理が終了しました！",
-        )
-
-    return mention_count
+    except Exception as e:
+        print(f"Error in analyze_mentions: {str(e)}")
+        if thread_ts and dm_channel_id:
+            client.chat_postMessage(
+                channel=dm_channel_id,
+                thread_ts=thread_ts,
+                text=f"分析中にエラーが発生しました: {str(e)}",
+            )
+        return {}, {}
 
 
 # メインアプリ起動
