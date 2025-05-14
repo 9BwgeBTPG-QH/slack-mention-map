@@ -1,3 +1,22 @@
+import base64
+import http.server
+import json
+import os
+import re
+import socketserver
+import tempfile
+import threading
+import time
+import webbrowser
+from datetime import datetime, timedelta
+import signal
+import sys
+from dotenv import load_dotenv
+
+import plotly.graph_objects as go
+from slack_bolt import App
+from slack_bolt.adapter.socket_mode import SocketModeHandler
+
 def create_html_template():
     """HTMLテンプレートを生成する関数"""
     html_content = """<!DOCTYPE html>
@@ -301,27 +320,20 @@ def create_html_template():
     with open("template.html", "w", encoding="utf-8") as f:
         f.write(html_content)
 
-import base64
-import http.server
-import json
-import os
-import re
-import socketserver
-import tempfile
-import threading
-import time
-import webbrowser
-from datetime import datetime, timedelta
-import signal
-import sys
-
-import plotly.graph_objects as go
-from slack_bolt import App
-from slack_bolt.adapter.socket_mode import SocketModeHandler
+# .envファイルから環境変数を読み込む
+load_dotenv()
 
 # 環境変数からトークンを取得
-SLACK_BOT_TOKEN = os.environ.get("SLACK_BOT_TOKEN")
-SLACK_APP_TOKEN = os.environ.get("SLACK_APP_TOKEN")
+SLACK_BOT_TOKEN = os.getenv("SLACK_BOT_TOKEN")
+SLACK_APP_TOKEN = os.getenv("SLACK_APP_TOKEN")
+
+# トークンが設定されているか確認
+if not SLACK_BOT_TOKEN or not SLACK_APP_TOKEN:
+    print("エラー: SLACK_BOT_TOKEN または SLACK_APP_TOKEN が設定されていません。")
+    print(".envファイルに以下の形式で設定してください：")
+    print("SLACK_BOT_TOKEN=xoxb-your-token")
+    print("SLACK_APP_TOKEN=xapp-your-token")
+    sys.exit(1)
 
 # Slackアプリの初期化
 app = App(token=SLACK_BOT_TOKEN)
