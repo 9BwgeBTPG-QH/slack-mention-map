@@ -33,26 +33,21 @@
             height: 750px;
         }
         .button-container {
-            margin: 15px 0;
+            margin-top: 20px;
             text-align: center;
-            position: relative;
-            z-index: 100;
         }
         .btn {
             background-color: #1D9BD1;
             color: white;
             border: none;
-            padding: 8px 16px;
+            padding: 10px 20px;
             border-radius: 4px;
             cursor: pointer;
-            font-size: 14px;
-            margin: 0 5px;
-            transition: all 0.3s ease;
+            font-size: 16px;
+            margin: 0 10px;
         }
         .btn:hover {
             background-color: #0F7AB7;
-            transform: translateY(-1px);
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         .btn-help {
             background-color: #5cb85c;
@@ -65,9 +60,6 @@
             justify-content: center;
             margin: 15px 0;
             flex-wrap: wrap;
-            padding: 10px;
-            background-color: #f8f9fa;
-            border-radius: 4px;
         }
         .legend-item {
             display: flex;
@@ -91,10 +83,6 @@
 <body>
     <div class="container">
         <h1>Slackメンション関係 サンキーダイアグラム</h1>
-        <div class="button-container">
-            <button id="download" class="btn">画像をダウンロード</button>
-            <button id="help" class="btn btn-help">使い方を見る</button>
-        </div>
         <div class="legend">
             <div class="legend-item">
                 <div class="legend-color" style="background-color: rgba(100, 149, 237, 0.8);"></div>
@@ -115,6 +103,10 @@
         </div>
         <div class="info" id="info">データを読み込み中...</div>
         <div id="sankey"></div>
+        <div class="button-container">
+            <button id="download" class="btn">画像をダウンロード</button>
+            <button id="help" class="btn btn-help">使い方を見る</button>
+        </div>
         <div class="footer">
             このサンキーダイアグラムは対話型です。ノードをドラッグして移動したり、ホバーして詳細を表示できます。
         </div>
