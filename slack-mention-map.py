@@ -32,7 +32,7 @@ def create_html_template():
             background-color: #f5f5f5;
         }
         .container {
-            max-width: 1250px;
+            max-width: 100vw;
             margin: 0 auto;
             background-color: white;
             padding: 20px;
@@ -56,10 +56,19 @@ def create_html_template():
             background-color: #f0f0f0;
             border-radius: 4px;
         }
-        #sankey, #heatmap {
+        /* グラフのラッパーで横スクロールを許可 */
+        .graph-wrapper {
             width: 100%;
-            height: 750px;
+            overflow-x: auto;
             margin-bottom: 30px;
+        }
+        #sankey, #heatmap {
+            min-width: 600px;
+            width: 100%;
+            max-width: 1200px;
+            height: 60vw;
+            max-height: 800px;
+            min-height: 400px;
         }
         .button-container {
             margin-top: 20px;
@@ -133,6 +142,20 @@ def create_html_template():
         .tab-content.active {
             display: block;
         }
+        @media (max-width: 900px) {
+            #sankey, #heatmap {
+                max-width: 100vw;
+                height: 70vw;
+                min-width: 400px;
+            }
+        }
+        @media (max-width: 600px) {
+            #sankey, #heatmap {
+                max-width: 100vw;
+                height: 90vw;
+                min-width: 300px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -165,10 +188,10 @@ def create_html_template():
                 <button class="tab-button" data-tab="heatmap-tab">投稿頻度ヒートマップ</button>
             </div>
             <div id="sankey-tab" class="tab-content active">
-                <div id="sankey"></div>
+                <div class="graph-wrapper"><div id="sankey"></div></div>
             </div>
             <div id="heatmap-tab" class="tab-content">
-                <div id="heatmap"></div>
+                <div class="graph-wrapper"><div id="heatmap"></div></div>
             </div>
         </div>
 
