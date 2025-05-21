@@ -321,9 +321,11 @@ def create_html_template():
                 document.getElementById('download').addEventListener('click', function() {
                     const activeTab = document.querySelector('.tab-content.active');
                     const plotId = activeTab.querySelector('div').id;
+                    const currentDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD形式
+                    const fileName = `slack_${plotId}_${data.channel_name}_${data.days}days_${currentDate}`;
                     Plotly.downloadImage(plotId, {
                         format: 'png',
-                        filename: `slack_${plotId}_${data.channel_name}`,
+                        filename: fileName,
                         width: 1200,
                         height: 800,
                         scale: 2
