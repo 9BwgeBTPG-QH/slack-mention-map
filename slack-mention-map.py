@@ -714,8 +714,8 @@ def mention_map_command(ack, command, client):
             days = int(text)
             if days <= 0:
                 days = 30
-            elif days > 365:  # 最大1年に制限
-                days = 365
+            elif days > 730:  # 最大2年に制限
+                days = 730
         except ValueError:
             # 数値でない場合はデフォルト値を使用
             pass
