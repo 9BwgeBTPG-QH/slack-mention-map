@@ -1,525 +1,1287 @@
 <!DOCTYPE html>
-<html>
+<html lang="ja">
 <head>
-    <meta charset="UTF-8">
-    <title>Slack メンション分析ダッシュボード</title>
-    <script src="https://cdn.plot.ly/plotly-2.29.1.min.js"></script>
-    <style>
-        body {
-            font-family: "Hiragino Kaku Gothic Pro", "メイリオ", Meiryo, sans-serif;
-            margin: 20px;
-            background-color: #f5f5f5;
-        }
-        .container {
-            max-width: 100vw;
-            margin: 0 auto;
-            background-color: white;
-            padding: 20px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }
-        h1 {
-            color: #1D9BD1;
-            text-align: center;
-            margin-bottom: 10px;
-        }
-        .subtitle {
-            text-align: center;
-            color: #666;
-            margin-bottom: 20px;
-            font-size: 1.1em;
-        }
-        .info {
-            margin-bottom: 20px;
-            padding: 10px;
-            background-color: #f0f0f0;
-            border-radius: 4px;
-        }
-        /* グラフのラッパーで横スクロールを許可 */
-        .graph-wrapper {
-            width: 100%;
-            overflow-x: auto;
-            margin-bottom: 30px;
-        }
-        #sankey, #heatmap {
-            min-width: 600px;
-            width: 100%;
-            max-width: 1200px;
-            height: 60vw;
-            max-height: 800px;
-            min-height: 400px;
-        }
-        .button-container {
-            margin-top: 20px;
-            text-align: center;
-        }
-        .btn {
-            background-color: #1D9BD1;
-            color: white;
-            border: none;
-            padding: 10px 20px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            margin: 0 10px;
-        }
-        .btn:hover {
-            background-color: #0F7AB7;
-        }
-        .btn-help {
-            background-color: #5cb85c;
-        }
-        .btn-help:hover {
-            background-color: #449d44;
-        }
-        .legend {
-            display: flex;
-            justify-content: center;
-            margin: 15px 0;
-            flex-wrap: wrap;
-        }
-        .legend-item {
-            display: flex;
-            align-items: center;
-            margin: 0 15px;
-        }
-        .legend-color {
-            width: 20px;
-            height: 20px;
-            margin-right: 5px;
-            border: 1px solid #ddd;
-        }
-        .footer {
-            margin-top: 20px;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
-        }
-        .tab-container {
-            margin-bottom: 20px;
-        }
-        .tab-buttons {
-            display: flex;
-            justify-content: center;
-            margin-bottom: 20px;
-        }
-        .tab-button {
-            padding: 10px 20px;
-            margin: 0 5px;
-            border: none;
-            background-color: #f0f0f0;
-            cursor: pointer;
-            border-radius: 4px;
-        }
-        .tab-button.active {
-            background-color: #1D9BD1;
-            color: white;
-        }
-        .tab-content {
-            display: none;
-        }
-        .tab-content.active {
-            display: block;
-        }
-        @media (max-width: 900px) {
-            #sankey, #heatmap {
-                max-width: 100vw;
-                height: 70vw;
-                min-width: 400px;
-            }
-        }
-        @media (max-width: 600px) {
-            #sankey, #heatmap {
-                max-width: 100vw;
-                height: 90vw;
-                min-width: 300px;
-            }
-        }
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Slack メンション分析ダッシュボード</title>
+<script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.1.2/wordcloud2.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Kaku Gothic Pro", sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    overflow: hidden;
+  }
+
+  /* --- Loading overlay --- */
+  #loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  #loading-overlay .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid #334;
+    border-top-color: #6366f1;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* --- Error --- */
+  #error-container {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #1a1a2e;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9998;
+    padding: 20px;
+    text-align: center;
+  }
+  #error-container h2 { color: #ef4444; margin-bottom: 12px; }
+  #error-container p { color: #8899aa; margin-bottom: 20px; }
+  #error-container button {
+    padding: 8px 20px;
+    background: #6366f1;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  /* --- Toolbar --- */
+  #toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+    height: 44px;
+    z-index: 100;
+  }
+  #toolbar .left { display: flex; align-items: center; gap: 12px; }
+  #toolbar .right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: #8899aa; }
+
+  #channel-info {
+    font-size: 13px;
+    color: #8899aa;
+    margin-right: 8px;
+  }
+  #channel-info .channel-name {
+    color: #6366f1;
+    font-weight: 600;
+  }
+
+  #breadcrumb {
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  #breadcrumb .bc-link {
+    color: #6366f1;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  #breadcrumb .bc-link:hover { text-decoration: underline; }
+  #breadcrumb .sep { color: #555; margin: 0 2px; }
+  #breadcrumb .current { color: #e0e0e0; font-weight: 600; }
+
+  .view-btn {
+    padding: 4px 12px;
+    border: 1px solid #334;
+    border-radius: 4px;
+    background: transparent;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+  .view-btn:hover { border-color: #6366f1; color: #e0e0e0; }
+  .view-btn.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+
+  .toolbar-btn {
+    padding: 4px 10px;
+    border: 1px solid #334;
+    border-radius: 4px;
+    background: transparent;
+    color: #8899aa;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+  .toolbar-btn:hover { border-color: #6366f1; color: #e0e0e0; }
+
+  /* --- Main layout --- */
+  #main {
+    position: absolute;
+    top: 44px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+  }
+
+  #network-container {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+  }
+
+  #wordcloud-container {
+    flex: 1;
+    display: none;
+    position: relative;
+    min-height: 0;
+  }
+  #wordcloud-canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* --- Side panel --- */
+  #side-panel {
+    width: 320px;
+    background: #16213e;
+    border-left: 1px solid #0f3460;
+    overflow-y: auto;
+    display: none;
+    flex-shrink: 0;
+  }
+  #side-panel.open { display: block; }
+
+  .panel-header {
+    padding: 16px;
+    border-bottom: 1px solid #0f3460;
+  }
+  .panel-name {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .panel-email-row {
+    font-size: 13px;
+    color: #8899aa;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .copy-btn {
+    padding: 2px 8px;
+    border: 1px solid #334;
+    border-radius: 3px;
+    background: transparent;
+    color: #6366f1;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .copy-btn:hover { background: #6366f1; color: #fff; }
+
+  .panel-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #0f3460;
+  }
+  .stat-box {
+    text-align: center;
+    padding: 8px;
+    background: #1a1a2e;
+    border-radius: 6px;
+  }
+  .stat-value { font-size: 20px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #8899aa; margin-top: 2px; }
+
+  .panel-badges {
+    padding: 8px 16px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-cc { background: #f59e0b33; color: #f59e0b; }
+  .badge-hub { background: #6366f133; color: #6366f1; }
+
+  .panel-section {
+    border-top: 1px solid #0f3460;
+  }
+  .section-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    font-weight: 600;
+    color: #aab;
+  }
+  .section-toggle:hover { background: #1a1a3e; }
+  .section-toggle .arrow { transition: transform 0.2s; }
+  .section-toggle.open .arrow { transform: rotate(90deg); }
+
+  .section-list {
+    display: none;
+    padding: 0 16px 8px;
+  }
+  .section-list.open { display: block; }
+  .section-item {
+    padding: 4px 0;
+    font-size: 13px;
+    cursor: pointer;
+    color: #ccd;
+    display: flex;
+    justify-content: space-between;
+  }
+  .section-item:hover { color: #6366f1; }
+  .section-item .count { color: #667; font-size: 12px; }
+
+  /* --- Legend --- */
+  #legend {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    background: #16213eee;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    max-height: 260px;
+    overflow-y: auto;
+    z-index: 50;
+  }
+  #legend h4 { margin-bottom: 6px; color: #aab; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+    cursor: pointer;
+  }
+  .legend-item:hover { opacity: 0.8; }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* --- Scrollbar --- */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #334; border-radius: 3px; }
+</style>
 </head>
 <body>
-    <div class="container">
-        <h1>Slack メンション分析ダッシュボード</h1>
-        <div class="subtitle" id="subtitle">データを読み込み中...</div>
-        <div class="legend">
-            <div class="legend-item">
-                <div class="legend-color" style="background-color: rgba(100, 149, 237, 0.8);"></div>
-                <span>送信者</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-color" style="background-color: rgba(147, 112, 219, 0.8);"></div>
-                <span>送受信両方</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-color" style="background-color: rgba(255, 165, 0, 0.8);"></div>
-                <span>受信者</span>
-            </div>
-            <div class="legend-item">
-                <div class="legend-color" style="background-color: rgba(180, 180, 180, 0.8);"></div>
-                <span>メンションなし</span>
-            </div>
-        </div>
-        <div class="info" id="info">データを読み込み中...</div>
-        
-        <div class="tab-container">
-            <div class="tab-buttons">
-                <button class="tab-button active" data-tab="sankey-tab">メンション関係図</button>
-                <button class="tab-button" data-tab="heatmap-tab">投稿頻度ヒートマップ</button>
-            </div>
-            <div id="sankey-tab" class="tab-content active">
-                <div class="graph-wrapper"><div id="sankey"></div></div>
-            </div>
-            <div id="heatmap-tab" class="tab-content">
-                <div class="graph-wrapper"><div id="heatmap"></div></div>
-            </div>
-        </div>
 
-        <div class="button-container">
-            <button id="download" class="btn">画像をダウンロード</button>
-            <button id="help" class="btn btn-help">使い方を見る</button>
-        </div>
-        <div class="footer">
-            このダッシュボードは対話型です。ノードをドラッグして移動したり、ホバーして詳細を表示できます。
-        </div>
+<!-- Loading -->
+<div id="loading-overlay">
+  <div class="spinner"></div>
+  <div>データを読み込み中...</div>
+</div>
+
+<!-- Error -->
+<div id="error-container">
+  <h2>データの読み込みに失敗しました</h2>
+  <p id="error-message"></p>
+  <button onclick="window.location.reload()">再読み込み</button>
+</div>
+
+<!-- Toolbar -->
+<div id="toolbar">
+  <div class="left">
+    <div id="channel-info"></div>
+    <div id="breadcrumb">
+      <span class="current">All</span>
     </div>
+    <button class="view-btn active" id="btn-network">Network</button>
+    <button class="view-btn" id="btn-wordcloud">Word Cloud</button>
+  </div>
+  <div class="right">
+    <span id="stat-nodes"></span>
+    <span id="stat-edges"></span>
+    <span id="stat-communities"></span>
+    <button class="toolbar-btn" id="btn-download">PNG</button>
+    <button class="toolbar-btn" id="btn-export-html">HTML</button>
+  </div>
+</div>
 
-    <script>
-        // グローバル変数としてdataを定義
-        let globalData = null;
+<!-- Main -->
+<div id="main">
+  <div id="network-container"></div>
+  <div id="wordcloud-container">
+    <canvas id="wordcloud-canvas"></canvas>
+  </div>
+  <div id="side-panel"></div>
+</div>
 
-        // タブ切り替え機能
-        document.querySelectorAll('.tab-button').forEach(button => {
-            button.addEventListener('click', () => {
-                // アクティブなタブボタンを更新
-                document.querySelectorAll('.tab-button').forEach(btn => {
-                    btn.classList.remove('active');
-                });
-                button.classList.add('active');
+<!-- Legend -->
+<div id="legend"></div>
 
-                // タブコンテンツを切り替え
-                const tabId = button.getAttribute('data-tab');
-                document.querySelectorAll('.tab-content').forEach(content => {
-                    content.classList.remove('active');
-                });
-                document.getElementById(tabId).classList.add('active');
-            });
-        });
+<script>
+// ===========================================================================
+// Data (fetched from /vis-data)
+// ===========================================================================
+var DATA = null;
 
-        // ヘルプモーダルを表示する関数
-        const showGuide = () => {
-            const modal = document.createElement('div');
-            modal.style.position = 'fixed';
-            modal.style.top = '50%';
-            modal.style.left = '50%';
-            modal.style.transform = 'translate(-50%, -50%)';
-            modal.style.background = 'white';
-            modal.style.padding = '20px';
-            modal.style.borderRadius = '8px';
-            modal.style.boxShadow = '0 4px 12px rgba(0,0,0,0.15)';
-            modal.style.zIndex = '1000';
-            modal.style.maxWidth = '600px';
-            modal.style.maxHeight = '80vh';
-            modal.style.overflow = 'auto';
-            
-            modal.innerHTML = `
-                <h3 style="margin-top:0">サンキーダイアグラムの使い方</h3>
-                <p><strong>ノードの色分け</strong>:</p>
-                <ul>
-                    <li><span style="color:cornflowerblue">青色</span>: 主に送信者（メンションをした人）</li>
-                    <li><span style="color:blueviolet">紫色</span>: 送信と受信の両方を行った人</li>
-                    <li><span style="color:orange">オレンジ色</span>: 主に受信者（メンションされた人）</li>
-                    <li><span style="color:gray">グレー</span>: メンションなし（N/A）</li>
-                </ul>
-                <p><strong>操作方法</strong>:</p>
-                <ul>
-                    <li>ノードをドラッグして自由に配置できます</li>
-                    <li>マウスを重ねると詳細情報が表示されます</li>
-                    <li>「画像をダウンロード」ボタンで保存できます</li>
-                    <li>タブでサンキーダイアグラムとヒートマップを切り替えられます</li>
-                </ul>
-                <p><strong>ヒント</strong>:</p>
-                <ul>
-                    <li>見やすい配置になるようノードを整理してみましょう</li>
-                    <li>関連性の強いノード同士を近くに配置すると分かりやすくなります</li>
-                    <li>特に太い線に注目すると主要なコミュニケーションの流れが分かります</li>
-                    <li>ヒートマップで投稿頻度の多い時期を確認できます</li>
-                </ul>
-                <button id="close-modal" style="padding:8px 16px; background:#1D9BD1; color:white; border:none; border-radius:4px; cursor:pointer; float:right">閉じる</button>
-                <div style="clear:both"></div>
-            `;
-            
-            document.body.appendChild(modal);
-            
-            document.getElementById('close-modal').addEventListener('click', () => {
-                modal.remove();
-            });
-            
-            // 任意の場所をクリックしても閉じられるように
-            modal.addEventListener('click', (e) => {
-                if (e.target === modal) {
-                    modal.remove();
-                }
-            });
-        };
-    
-        // データをフェッチする
-        async function fetchData() {
-            try {
-                const response = await fetch('/data');
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                const data = await response.json();
-                
-                // データの検証
-                if (!data || !data.mention_data || !data.heatmap_data) {
-                    throw new Error('Invalid data format received');
-                }
+// ===========================================================================
+// State
+// ===========================================================================
+var network = null;
+var allNodes = new vis.DataSet();
+var allEdges = new vis.DataSet();
+var focusedNode = null;
+var clusteredCommunities = new Set();
+var currentView = 'network';
+var nodeMap = {};
 
-                // グローバル変数にデータを保存
-                globalData = data;
+// ===========================================================================
+// DOM helpers
+// ===========================================================================
+function el(tag, attrs, children) {
+  var e = document.createElement(tag);
+  if (attrs) {
+    Object.keys(attrs).forEach(function(k) {
+      if (k === 'textContent') { e.textContent = attrs[k]; }
+      else if (k === 'className') { e.className = attrs[k]; }
+      else if (k.startsWith('on')) { e.addEventListener(k.slice(2), attrs[k]); }
+      else { e.setAttribute(k, attrs[k]); }
+    });
+  }
+  if (children) {
+    (Array.isArray(children) ? children : [children]).forEach(function(c) {
+      if (typeof c === 'string') e.appendChild(document.createTextNode(c));
+      else if (c) e.appendChild(c);
+    });
+  }
+  return e;
+}
 
-                // 情報テキストを更新
-                document.getElementById('info').textContent = 
-                    `チャンネル: #${data.channel_name} / 期間: 過去${data.days}日間 / 生成日時: ${new Date(data.timestamp * 1000).toLocaleString()}`;
-                
-                // サブタイトルを更新
-                document.getElementById('subtitle').textContent = 
-                    `#${data.channel_name} のメンション分析（過去${data.days}日間）`;
-                
-                // ページタイトルを更新
-                document.title = `#${data.channel_name} - Slack メンション分析ダッシュボード`;
-                
-                // サンキーダイアグラムの作成
-                createSankeyDiagram(data.mention_data);
-                
-                // ヒートマップの作成
-                createHeatmap(data.heatmap_data);
-                
-                // ダウンロードボタンの設定
-                document.getElementById('download').addEventListener('click', function() {
-                    const activeTab = document.querySelector('.tab-content.active');
-                    const plotId = activeTab.querySelector('div').id;
-                    Plotly.downloadImage(plotId, {
-                        format: 'png',
-                        filename: `slack_${plotId}_${data.channel_name}`,
-                        width: 1200,
-                        height: 800,
-                        scale: 2
-                    });
-                });
-                
-                // ヘルプボタンの設定
-                document.getElementById('help').addEventListener('click', showGuide);
-                
-                // 最初にガイドを表示
-                setTimeout(showGuide, 1000);
+// ===========================================================================
+// Fetch data & initialize
+// ===========================================================================
+document.getElementById('btn-network').addEventListener('click', function() { switchView('network'); });
+document.getElementById('btn-wordcloud').addEventListener('click', function() { switchView('wordcloud'); });
+document.getElementById('btn-download').addEventListener('click', downloadPNG);
+document.getElementById('btn-export-html').addEventListener('click', exportHTML);
 
-            } catch (error) {
-                console.error('データ取得エラー:', error);
-                document.getElementById('info').textContent = `エラー: ${error.message}`;
-                
-                // エラーメッセージを表示
-                const errorDiv = document.createElement('div');
-                errorDiv.style.color = 'red';
-                errorDiv.style.padding = '10px';
-                errorDiv.style.margin = '10px 0';
-                errorDiv.style.backgroundColor = '#ffeeee';
-                errorDiv.style.border = '1px solid #ffcccc';
-                errorDiv.style.borderRadius = '4px';
-                errorDiv.innerHTML = `
-                    <h3>データの読み込みに失敗しました</h3>
-                    <p>エラーの詳細: ${error.message}</p>
-                    <p>以下の点を確認してください：</p>
-                    <ul>
-                        <li>アプリケーションが正常に動作しているか</li>
-                        <li>インターネット接続が安定しているか</li>
-                        <li>ブラウザを更新してみる</li>
-                    </ul>
-                    <button onclick="window.location.reload()" style="padding: 8px 16px; background: #1D9BD1; color: white; border: none; border-radius: 4px; cursor: pointer;">
-                        ページを更新
-                    </button>
-                `;
-                document.querySelector('.container').insertBefore(errorDiv, document.querySelector('.tab-container'));
-            }
-        }
+window.addEventListener('DOMContentLoaded', fetchAndInit);
 
-        // ページ読み込み時にデータを取得
-        fetchData();
+async function fetchAndInit() {
+  try {
+    var response = await fetch('/vis-data');
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    DATA = await response.json();
 
-        // サンキーダイアグラムを作成する関数
-        function createSankeyDiagram(mentionData) {
-            try {
-                if (!globalData) {
-                    throw new Error('データが読み込まれていません');
-                }
+    if (!DATA || !DATA.nodes || !DATA.edges) {
+      throw new Error('Invalid data format');
+    }
 
-                // 送信者と受信者のリストを作成
-                const senders = new Set();
-                const receivers = new Set();
-                const links = [];
-                const values = [];
-                const colors = [];
+    // Build lookup map
+    DATA.nodes.forEach(function(n) { nodeMap[n.id] = n; });
 
-                // カラーパレットの生成（送信者ごとに異なる色を割り当て）
-                function generateColor(index, total) {
-                    const hue = (index / total) * 360;
-                    return `hsla(${hue}, 70%, 50%, 0.6)`;
-                }
+    // Update page title & channel info
+    var channelName = DATA.channel_name || '';
+    var days = DATA.days || 0;
+    document.title = '#' + channelName + ' - Slack メンション分析';
 
-                // データの整理
-                Object.entries(mentionData).forEach(([sender, receiverData]) => {
-                    senders.add(sender);
-                    Object.entries(receiverData).forEach(([receiver, count]) => {
-                        receivers.add(receiver);
-                        links.push([sender, receiver]);
-                        values.push(count);
-                    });
-                });
+    var infoEl = document.getElementById('channel-info');
+    var nameSpan = el('span', { className: 'channel-name', textContent: '#' + channelName });
+    infoEl.appendChild(nameSpan);
+    infoEl.appendChild(document.createTextNode(' / ' + days + '日間'));
 
-                // 送信者と受信者の配列を作成
-                const senderArray = Array.from(senders);
-                const receiverArray = Array.from(receivers);
+    init();
 
-                // ノードの作成
-                const nodes = [
-                    ...senderArray.map(name => ({ name: name })),
-                    ...receiverArray.map(name => ({ name: name }))
-                ];
+    // Hide loading
+    document.getElementById('loading-overlay').style.display = 'none';
 
-                // リンクの作成とカラーの割り当て
-                const link_data = links.map(([source, target], i) => ({
-                    source: senderArray.indexOf(source),
-                    target: senderArray.length + receiverArray.indexOf(target),
-                    value: values[i],
-                    color: generateColor(senderArray.indexOf(source), senderArray.length)
-                }));
+  } catch (err) {
+    document.getElementById('loading-overlay').style.display = 'none';
+    document.getElementById('error-message').textContent = err.message;
+    document.getElementById('error-container').style.display = 'flex';
+  }
+}
 
-                // Sankeyダイアグラムのデータ
-                const plotData = [{
-                    type: "sankey",
-                    orientation: "h",
-                    node: {
-                        pad: 15,
-                        thickness: 20,
-                        line: {
-                            color: "black",
-                            width: 0.5
-                        },
-                        label: nodes.map(n => n.name),
-                        x: [...Array(senderArray.length).fill(0), ...Array(receiverArray.length).fill(1)],
-                        y: [
-                            ...Array(senderArray.length).fill().map((_, i) => i / (senderArray.length - 1 || 1)),
-                            ...Array(receiverArray.length).fill().map((_, i) => i / (receiverArray.length - 1 || 1))
-                        ],
-                        color: nodes.map((_, i) => 
-                            i < senderArray.length ? "rgba(100, 149, 237, 0.8)" : "rgba(255, 165, 0, 0.8)"
-                        )
-                    },
-                    link: {
-                        source: link_data.map(d => d.source),
-                        target: link_data.map(d => d.target),
-                        value: link_data.map(d => d.value),
-                        color: link_data.map(d => d.color)
-                    }
-                }];
+function init() {
+  // Stats
+  document.getElementById('stat-nodes').textContent = DATA.analysis.total_nodes + ' nodes';
+  document.getElementById('stat-edges').textContent = DATA.analysis.total_edges + ' edges';
+  document.getElementById('stat-communities').textContent = DATA.communities.length + ' communities';
 
-                // レイアウトの設定
-                const layout = {
-                    title: {
-                        text: `チャンネル #${globalData.channel_name} のメンション関係（過去${globalData.days}日間）`,
-                        font: {
-                            size: 20,
-                            family: "Hiragino Kaku Gothic Pro, メイリオ, sans-serif"
-                        }
-                    },
-                    width: 1200,
-                    height: 800,
-                    font: {
-                        size: 12,
-                        family: "Hiragino Kaku Gothic Pro, メイリオ, sans-serif"
-                    },
-                    paper_bgcolor: 'rgba(255,255,255,1)',
-                    plot_bgcolor: 'rgba(255,255,255,1)',
-                };
+  // Build vis datasets
+  var visNodes = DATA.nodes.map(function(n) {
+    return {
+      id: n.id,
+      label: n.label,
+      color: {
+        background: n.color,
+        border: n.is_cc_key ? '#f59e0b' : (n.is_hub ? '#fff' : n.color),
+        highlight: { background: '#fff', border: n.color },
+      },
+      size: n.size,
+      font: { color: '#ddd', size: 11, face: 'sans-serif' },
+      borderWidth: n.is_cc_key || n.is_hub ? 3 : 1,
+      shape: 'dot',
+    };
+  });
 
-                // プロット作成
-                Plotly.newPlot('sankey', plotData, layout);
-            } catch (error) {
-                console.error('サンキーダイアグラム作成エラー:', error);
-                throw error;
-            }
-        }
+  var visEdges = DATA.edges.map(function(e, i) {
+    return {
+      id: 'e' + i,
+      from: e.from,
+      to: e.to,
+      width: e.width,
+      color: { color: '#ffffff18', highlight: '#6366f1', hover: '#6366f188' },
+      arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+      smooth: { type: 'continuous' },
+    };
+  });
 
-        // ヒートマップを作成する関数
-        function createHeatmap(heatmapData) {
-            try {
-                if (!globalData) {
-                    throw new Error('データが読み込まれていません');
-                }
+  allNodes.add(visNodes);
+  allEdges.add(visEdges);
 
-                // 日付の範囲を取得
-                const dates = new Set();
-                Object.values(heatmapData).forEach(userData => {
-                    Object.keys(userData).forEach(date => dates.add(date));
-                });
-                const sortedDates = Array.from(dates).sort();
+  // Create network
+  var container = document.getElementById('network-container');
+  network = new vis.Network(container, { nodes: allNodes, edges: allEdges }, {
+    physics: {
+      solver: 'barnesHut',
+      barnesHut: {
+        gravitationalConstant: -3000,
+        centralGravity: 0.1,
+        springLength: 120,
+        springConstant: 0.02,
+        damping: 0.3,
+      },
+      stabilization: { iterations: 200 },
+    },
+    interaction: {
+      hover: true,
+      tooltipDelay: 200,
+      zoomView: true,
+      dragView: true,
+    },
+    layout: { improvedLayout: true },
+  });
 
-                // ユーザーリストを作成
-                const users = Object.keys(heatmapData).sort();
+  // Events
+  network.on('click', onNodeClick);
+  network.on('doubleClick', onDoubleClick);
+  network.on('afterDrawing', drawConvexHulls);
 
-                // ヒートマップのデータを作成
-                const z = users.map(user => 
-                    sortedDates.map(date => heatmapData[user][date] || 0)
-                );
+  // Legend
+  renderLegend();
+}
 
-                // ヒートマップのデータ
-                const plotData = [{
-                    type: 'heatmap',
-                    z: z,
-                    x: sortedDates,
-                    y: users,
-                    colorscale: 'Viridis',
-                    showscale: true,
-                    colorbar: {
-                        title: '投稿数',
-                        titleside: 'right'
-                    }
-                }];
+// ===========================================================================
+// Node click -> zoom into connections
+// ===========================================================================
+function onNodeClick(params) {
+  if (params.nodes.length === 0) {
+    if (focusedNode) resetView();
+    return;
+  }
 
-                // レイアウトの設定
-                const layout = {
-                    title: {
-                        text: `チャンネル #${globalData.channel_name} の投稿頻度（過去${globalData.days}日間）`,
-                        font: {
-                            size: 20,
-                            family: "Hiragino Kaku Gothic Pro, メイリオ, sans-serif"
-                        }
-                    },
-                    width: 1200,
-                    height: 800,
-                    font: {
-                        size: 12,
-                        family: "Hiragino Kaku Gothic Pro, メイリオ, sans-serif"
-                    },
-                    paper_bgcolor: 'rgba(255,255,255,1)',
-                    plot_bgcolor: 'rgba(255,255,255,1)',
-                    xaxis: {
-                        title: '日付',
-                        tickangle: -45
-                    },
-                    yaxis: {
-                        title: 'ユーザー'
-                    }
-                };
+  var nodeId = params.nodes[0];
+  if (network.isCluster(nodeId)) return;
+  focusNode(nodeId);
+}
 
-                // プロット作成
-                Plotly.newPlot('heatmap', plotData, layout);
-            } catch (error) {
-                console.error('ヒートマップ作成エラー:', error);
-                throw error;
-            }
-        }
-    </script>
+function focusNode(nodeId) {
+  var node = nodeMap[nodeId];
+  if (!node) return;
+  focusedNode = nodeId;
+
+  var connectedEdges = DATA.edges.filter(function(e) {
+    return e.from === nodeId || e.to === nodeId;
+  });
+  var connectedNodeIds = new Set([nodeId]);
+  connectedEdges.forEach(function(e) {
+    connectedNodeIds.add(e.from);
+    connectedNodeIds.add(e.to);
+  });
+
+  var filteredNodes = DATA.nodes
+    .filter(function(n) { return connectedNodeIds.has(n.id); })
+    .map(function(n) {
+      return {
+        id: n.id,
+        label: n.label,
+        color: {
+          background: n.id === nodeId ? '#fff' : n.color,
+          border: n.id === nodeId ? n.color : (n.is_cc_key ? '#f59e0b' : n.color),
+          highlight: { background: '#fff', border: n.color },
+        },
+        size: n.id === nodeId ? n.size * 1.5 : n.size,
+        font: { color: '#ddd', size: n.id === nodeId ? 14 : 11, face: 'sans-serif' },
+        borderWidth: n.id === nodeId ? 4 : (n.is_cc_key || n.is_hub ? 3 : 1),
+        shape: 'dot',
+      };
+    });
+
+  var filteredEdges = connectedEdges.map(function(e, i) {
+    return {
+      id: 'fe' + i,
+      from: e.from,
+      to: e.to,
+      width: e.width,
+      color: { color: '#ffffff30', highlight: '#6366f1', hover: '#6366f188' },
+      arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+      smooth: { type: 'continuous' },
+    };
+  });
+
+  allNodes.clear();
+  allEdges.clear();
+  allNodes.add(filteredNodes);
+  allEdges.add(filteredEdges);
+
+  network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+
+  updateBreadcrumb(node.name);
+  showSidePanel(nodeId);
+}
+
+function resetView() {
+  focusedNode = null;
+
+  var visNodes = DATA.nodes.map(function(n) {
+    return {
+      id: n.id,
+      label: n.label,
+      color: {
+        background: n.color,
+        border: n.is_cc_key ? '#f59e0b' : (n.is_hub ? '#fff' : n.color),
+        highlight: { background: '#fff', border: n.color },
+      },
+      size: n.size,
+      font: { color: '#ddd', size: 11, face: 'sans-serif' },
+      borderWidth: n.is_cc_key || n.is_hub ? 3 : 1,
+      shape: 'dot',
+    };
+  });
+
+  var visEdges = DATA.edges.map(function(e, i) {
+    return {
+      id: 'e' + i,
+      from: e.from,
+      to: e.to,
+      width: e.width,
+      color: { color: '#ffffff18', highlight: '#6366f1', hover: '#6366f188' },
+      arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+      smooth: { type: 'continuous' },
+    };
+  });
+
+  allNodes.clear();
+  allEdges.clear();
+  allNodes.add(visNodes);
+  allEdges.add(visEdges);
+
+  network.fit({ animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+
+  updateBreadcrumb(null);
+  document.getElementById('side-panel').classList.remove('open');
+}
+
+// ===========================================================================
+// Breadcrumb
+// ===========================================================================
+function updateBreadcrumb(name) {
+  var bc = document.getElementById('breadcrumb');
+  while (bc.firstChild) bc.removeChild(bc.firstChild);
+
+  if (!name) {
+    bc.appendChild(el('span', { className: 'current', textContent: 'All' }));
+  } else {
+    bc.appendChild(el('a', { className: 'bc-link', textContent: 'All', onclick: resetView }));
+    bc.appendChild(el('span', { className: 'sep', textContent: ' > ' }));
+    bc.appendChild(el('span', { className: 'current', textContent: name }));
+  }
+}
+
+// ===========================================================================
+// Side panel
+// ===========================================================================
+function showSidePanel(nodeId) {
+  var node = nodeMap[nodeId];
+  if (!node) return;
+  var panel = document.getElementById('side-panel');
+  while (panel.firstChild) panel.removeChild(panel.firstChild);
+
+  // Header
+  var header = el('div', { className: 'panel-header' }, [
+    el('div', { className: 'panel-name', textContent: node.name }),
+    buildEmailRow(node.email),
+  ]);
+  panel.appendChild(header);
+
+  // Badges
+  if (node.is_cc_key || node.is_hub) {
+    var badgesDiv = el('div', { className: 'panel-badges' });
+    if (node.is_cc_key) badgesDiv.appendChild(el('span', { className: 'badge badge-cc', textContent: 'Passive Observer' }));
+    if (node.is_hub) badgesDiv.appendChild(el('span', { className: 'badge badge-hub', textContent: 'Hub' }));
+    panel.appendChild(badgesDiv);
+  }
+
+  // Stats
+  var stats = el('div', { className: 'panel-stats' }, [
+    buildStatBox(node.sent, 'Mentions'),
+    buildStatBox(node.received, 'Mentioned'),
+    buildStatBox(node.cc_count, 'Reactions'),
+  ]);
+  panel.appendChild(stats);
+
+  // Connection lists
+  var toEdges = DATA.edges.filter(function(e) { return e.from === nodeId && e.to_weight > 0; });
+  var ccEdges = DATA.edges.filter(function(e) { return e.from === nodeId && e.cc_weight > 0; });
+  var fromEdges = DATA.edges.filter(function(e) { return e.to === nodeId; });
+
+  var toList = toEdges.map(function(e) { return { email: e.to, name: (nodeMap[e.to] || {}).name || e.to, count: e.to_weight }; })
+    .sort(function(a, b) { return b.count - a.count; });
+  var ccList = ccEdges.map(function(e) { return { email: e.to, name: (nodeMap[e.to] || {}).name || e.to, count: e.cc_weight }; })
+    .sort(function(a, b) { return b.count - a.count; });
+  var fromList = fromEdges.map(function(e) { return { email: e.from, name: (nodeMap[e.from] || {}).name || e.from, count: e.to_weight + e.cc_weight }; })
+    .sort(function(a, b) { return b.count - a.count; });
+
+  if (toList.length > 0) panel.appendChild(buildSection('Mention先', toList));
+  if (ccList.length > 0) panel.appendChild(buildSection('Reaction先', ccList));
+  if (fromList.length > 0) panel.appendChild(buildSection('受信元', fromList));
+
+  panel.classList.add('open');
+}
+
+function buildEmailRow(email) {
+  var row = el('div', { className: 'panel-email-row' });
+  row.appendChild(el('span', { textContent: email }));
+  var btn = el('button', {
+    className: 'copy-btn',
+    textContent: 'Copy',
+    onclick: function() {
+      navigator.clipboard.writeText(email).then(function() {
+        btn.textContent = 'Copied!';
+        setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
+      });
+    }
+  });
+  row.appendChild(btn);
+  return row;
+}
+
+function buildStatBox(value, label) {
+  return el('div', { className: 'stat-box' }, [
+    el('div', { className: 'stat-value', textContent: String(value) }),
+    el('div', { className: 'stat-label', textContent: label }),
+  ]);
+}
+
+function buildSection(title, items) {
+  var section = el('div', { className: 'panel-section' });
+
+  var toggle = el('div', { className: 'section-toggle' }, [
+    el('span', { textContent: title + ' (' + items.length + ')' }),
+    el('span', { className: 'arrow', textContent: '\u25B6' }),
+  ]);
+  var list = el('div', { className: 'section-list' });
+
+  toggle.addEventListener('click', function() {
+    toggle.classList.toggle('open');
+    list.classList.toggle('open');
+  });
+
+  items.forEach(function(item) {
+    var row = el('div', { className: 'section-item' }, [
+      el('span', { textContent: item.name }),
+      el('span', { className: 'count', textContent: String(item.count) }),
+    ]);
+    row.addEventListener('click', function() { focusNode(item.email); });
+    list.appendChild(row);
+  });
+
+  section.appendChild(toggle);
+  section.appendChild(list);
+  return section;
+}
+
+// ===========================================================================
+// Convex hull drawing
+// ===========================================================================
+function drawConvexHulls(ctx) {
+  if (focusedNode) return;
+
+  var positions = network.getPositions();
+  if (!positions || Object.keys(positions).length === 0) return;
+
+  DATA.communities.forEach(function(comm) {
+    if (comm.size < 3) return;
+    if (clusteredCommunities.has(comm.id)) return;
+
+    var points = [];
+    comm.members.forEach(function(m) {
+      var pos = positions[m.email];
+      if (pos) points.push([pos.x, pos.y]);
+    });
+
+    if (points.length < 3) return;
+
+    var hull = grahamScan(points);
+    if (hull.length < 3) return;
+
+    var cx = hull.reduce(function(s, p) { return s + p[0]; }, 0) / hull.length;
+    var cy = hull.reduce(function(s, p) { return s + p[1]; }, 0) / hull.length;
+    var padding = 40;
+
+    ctx.beginPath();
+    hull.forEach(function(p, i) {
+      var dx = p[0] - cx;
+      var dy = p[1] - cy;
+      var dist = Math.sqrt(dx * dx + dy * dy);
+      var ox = p[0] + (dist > 0 ? dx / dist * padding : 0);
+      var oy = p[1] + (dist > 0 ? dy / dist * padding : 0);
+      if (i === 0) ctx.moveTo(ox, oy);
+      else ctx.lineTo(ox, oy);
+    });
+    ctx.closePath();
+
+    ctx.fillStyle = comm.color + '14';
+    ctx.fill();
+    ctx.strokeStyle = comm.color + '26';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  });
+}
+
+function grahamScan(points) {
+  if (points.length < 3) return points.slice();
+
+  var lowest = 0;
+  for (var i = 1; i < points.length; i++) {
+    if (points[i][1] < points[lowest][1] ||
+        (points[i][1] === points[lowest][1] && points[i][0] < points[lowest][0])) {
+      lowest = i;
+    }
+  }
+  var tmp = points[0]; points[0] = points[lowest]; points[lowest] = tmp;
+  var pivot = points[0];
+
+  var sorted = points.slice(1).sort(function(a, b) {
+    var angleA = Math.atan2(a[1] - pivot[1], a[0] - pivot[0]);
+    var angleB = Math.atan2(b[1] - pivot[1], b[0] - pivot[0]);
+    return angleA - angleB;
+  });
+
+  var stack = [pivot, sorted[0]];
+  for (var i = 1; i < sorted.length; i++) {
+    while (stack.length > 1 && crossProduct(stack[stack.length - 2], stack[stack.length - 1], sorted[i]) <= 0) {
+      stack.pop();
+    }
+    stack.push(sorted[i]);
+  }
+  return stack;
+}
+
+function crossProduct(o, a, b) {
+  return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+}
+
+// ===========================================================================
+// Double-click -> cluster/uncluster community
+// ===========================================================================
+function onDoubleClick(params) {
+  if (params.nodes.length === 0) return;
+  var nodeId = params.nodes[0];
+
+  if (network.isCluster(nodeId)) {
+    network.openCluster(nodeId);
+    var commId = parseInt(nodeId.replace('cluster_', ''), 10);
+    clusteredCommunities.delete(commId);
+    return;
+  }
+
+  var node = nodeMap[nodeId];
+  if (!node) return;
+  var commId = node.community;
+  var comm = DATA.communities[commId];
+  if (!comm || comm.size < 2) return;
+
+  var memberEmails = new Set(comm.members.map(function(m) { return m.email; }));
+  network.cluster({
+    joinCondition: function(nodeOptions) { return memberEmails.has(nodeOptions.id); },
+    clusterNodeProperties: {
+      id: 'cluster_' + commId,
+      label: 'Cluster ' + commId + ' (' + comm.size + ')',
+      color: { background: comm.color, border: comm.color },
+      size: 30,
+      shape: 'dot',
+      font: { color: '#ddd', size: 13 },
+      borderWidth: 2,
+    },
+  });
+
+  clusteredCommunities.add(commId);
+}
+
+// ===========================================================================
+// View switching
+// ===========================================================================
+function switchView(view) {
+  currentView = view;
+  var nc = document.getElementById('network-container');
+  var wc = document.getElementById('wordcloud-container');
+  var btnN = document.getElementById('btn-network');
+  var btnW = document.getElementById('btn-wordcloud');
+  var legend = document.getElementById('legend');
+
+  if (view === 'network') {
+    nc.style.display = 'block';
+    wc.style.display = 'none';
+    btnN.classList.add('active');
+    btnW.classList.remove('active');
+    legend.style.display = 'block';
+    if (network) network.redraw();
+  } else {
+    nc.style.display = 'none';
+    wc.style.display = 'block';
+    btnN.classList.remove('active');
+    btnW.classList.add('active');
+    legend.style.display = 'none';
+    renderWordCloud();
+  }
+}
+
+// ===========================================================================
+// Word Cloud
+// ===========================================================================
+function renderWordCloud() {
+  var canvas = document.getElementById('wordcloud-canvas');
+  var container = document.getElementById('wordcloud-container');
+  canvas.width = container.clientWidth;
+  canvas.height = container.clientHeight;
+
+  if (DATA.wordcloud_data.length === 0) return;
+
+  var maxSize = Math.max.apply(null, DATA.wordcloud_data.map(function(d) { return d.size; }));
+  var minFontSize = 12;
+  var maxFontSize = Math.min(80, canvas.height / 4);
+
+  var list = DATA.wordcloud_data.map(function(d) {
+    var fontSize = minFontSize + (d.size / maxSize) * (maxFontSize - minFontSize);
+    return [d.text, fontSize];
+  });
+
+  var colorMap = {};
+  DATA.wordcloud_data.forEach(function(d) { colorMap[d.text] = d.color; });
+
+  WordCloud(canvas, {
+    list: list,
+    gridSize: 8,
+    weightFactor: 1,
+    fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+    color: function(word) { return colorMap[word] || '#6366f1'; },
+    backgroundColor: '#1a1a2e',
+    rotateRatio: 0.1,
+    click: function(item) {
+      var entry = DATA.wordcloud_data.find(function(d) { return d.text === item[0]; });
+      if (entry) {
+        switchView('network');
+        setTimeout(function() { focusNode(entry.email); }, 300);
+      }
+    },
+  });
+}
+
+// ===========================================================================
+// Legend
+// ===========================================================================
+function renderLegend() {
+  var container = document.getElementById('legend');
+  while (container.firstChild) container.removeChild(container.firstChild);
+
+  container.appendChild(el('h4', { textContent: 'Communities' }));
+
+  DATA.communities.forEach(function(comm) {
+    var names = comm.members.slice(0, 3).map(function(m) { return m.name; }).join(', ');
+    if (comm.size > 3) names += ' +' + (comm.size - 3);
+
+    var item = el('div', { className: 'legend-item' }, [
+      el('div', { className: 'legend-dot', style: 'background:' + comm.color }),
+      el('span', { textContent: names }),
+    ]);
+    item.addEventListener('click', function() { highlightCommunity(comm.id); });
+    container.appendChild(item);
+  });
+
+  // CC key persons (Passive Observers)
+  if (DATA.analysis.cc_key_persons.length > 0) {
+    var h4 = el('h4', { textContent: 'Passive Observers', style: 'margin-top:10px' });
+    container.appendChild(h4);
+
+    DATA.analysis.cc_key_persons.forEach(function(p) {
+      var item = el('div', { className: 'legend-item' }, [
+        el('div', { className: 'legend-dot', style: 'background:#f59e0b' }),
+        el('span', { textContent: p.name + ' (' + p.cc_count + ')' }),
+      ]);
+      item.addEventListener('click', function() { focusNode(p.email); });
+      container.appendChild(item);
+    });
+  }
+}
+
+function highlightCommunity(commId) {
+  var comm = DATA.communities[commId];
+  if (!comm) return;
+  var memberIds = comm.members.map(function(m) { return m.email; });
+  network.selectNodes(memberIds);
+  network.fit({ nodes: memberIds, animation: { duration: 400, easingFunction: 'easeInOutQuad' } });
+}
+
+// ===========================================================================
+// PNG Download
+// ===========================================================================
+function downloadPNG() {
+  if (!network) return;
+  var canvas = network.canvas.frame.canvas;
+  var link = document.createElement('a');
+  var channelName = (DATA && DATA.channel_name) || 'unknown';
+  var days = (DATA && DATA.days) || 0;
+  var dateStr = new Date().toISOString().split('T')[0];
+  link.download = 'slack_network_' + channelName + '_' + days + 'days_' + dateStr + '.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+// ===========================================================================
+// HTML Export (self-contained standalone file)
+// ===========================================================================
+function exportHTML() {
+  if (!DATA) return;
+
+  var channelName = DATA.channel_name || 'unknown';
+  var days = DATA.days || 0;
+  var dateStr = new Date().toISOString().split('T')[0];
+  var fileName = 'slack_network_' + channelName + '_' + days + 'days_' + dateStr + '.html';
+
+  // Get current page's CSS
+  var styleEl = document.querySelector('style');
+  var css = styleEl ? styleEl.textContent : '';
+
+  // Build self-contained HTML
+  var html = '<!DOCTYPE html>\n<html lang="ja" style="height:100%;margin:0;padding:0;">\n<head>\n'
+    + '<meta charset="UTF-8">\n'
+    + '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
+    + '<title>#' + channelName + ' - Slack メンション分析 (' + days + '日間)</title>\n'
+    + '<script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"><\/script>\n'
+    + '<script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.1.2/wordcloud2.min.js"><\/script>\n'
+    + '<style>\n' + css + '\n</style>\n'
+    + '</head>\n<body style="margin:0;padding:0;height:100%;width:100%;background:#1a1a2e;color:#e0e0e0;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">\n'
+    + '<!-- Toolbar -->\n'
+    + '<div id="toolbar" style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:#16213e;border-bottom:1px solid #0f3460;height:44px;z-index:100;box-sizing:border-box;">\n'
+    + '  <div class="left" style="display:flex;align-items:center;gap:12px;">\n'
+    + '    <div id="channel-info" style="font-size:13px;color:#8899aa;"><span class="channel-name" style="color:#6366f1;font-weight:600;">#' + escapeHtml(channelName) + '</span> / ' + days + '日間 / exported ' + dateStr + '</div>\n'
+    + '    <div id="breadcrumb" style="font-size:14px;display:flex;align-items:center;gap:4px;"><span class="current" style="color:#e0e0e0;font-weight:600;">All</span></div>\n'
+    + '    <button class="view-btn active" id="btn-network" style="padding:4px 12px;border:1px solid #6366f1;border-radius:4px;background:#6366f1;color:#fff;cursor:pointer;font-size:13px;">Network</button>\n'
+    + '    <button class="view-btn" id="btn-wordcloud" style="padding:4px 12px;border:1px solid #334;border-radius:4px;background:transparent;color:#aaa;cursor:pointer;font-size:13px;">Word Cloud</button>\n'
+    + '  </div>\n'
+    + '  <div class="right" style="display:flex;align-items:center;gap:16px;font-size:13px;color:#8899aa;">\n'
+    + '    <span id="stat-nodes"></span>\n'
+    + '    <span id="stat-edges"></span>\n'
+    + '    <span id="stat-communities"></span>\n'
+    + '  </div>\n'
+    + '</div>\n'
+    + '<div id="main" style="position:absolute;top:44px;left:0;right:0;bottom:0;display:flex;">\n'
+    + '  <div id="network-container" style="flex:1;position:relative;min-height:0;height:100%;"></div>\n'
+    + '  <div id="wordcloud-container" style="flex:1;display:none;position:relative;min-height:0;"><canvas id="wordcloud-canvas" style="width:100%;height:100%;"></canvas></div>\n'
+    + '  <div id="side-panel" style="width:320px;background:#16213e;border-left:1px solid #0f3460;overflow-y:auto;display:none;flex-shrink:0;"></div>\n'
+    + '</div>\n'
+    + '<div id="legend" style="position:absolute;bottom:12px;left:12px;background:#16213eee;border:1px solid #0f3460;border-radius:8px;padding:10px 14px;font-size:12px;z-index:200;"></div>\n'
+    + '<script>\n'
+    + 'var DATA = ' + JSON.stringify(DATA) + ';\n'
+    + getScriptBody()
+    + '\n<\/script>\n'
+    + '</body>\n</html>';
+
+  var blob = new Blob([html], { type: 'text/html; charset=utf-8' });
+  var link = document.createElement('a');
+  link.download = fileName;
+  link.href = URL.createObjectURL(blob);
+  link.click();
+  URL.revokeObjectURL(link.href);
+}
+
+function escapeHtml(str) {
+  var div = document.createElement('div');
+  div.appendChild(document.createTextNode(str));
+  return div.innerHTML;
+}
+
+function getScriptBody() {
+  // Reusable script body for standalone HTML (DATA is already defined inline)
+  return ''
+  + 'var network=null,allNodes=new vis.DataSet(),allEdges=new vis.DataSet(),'
+  + 'focusedNode=null,clusteredCommunities=new Set(),currentView="network",nodeMap={};\n'
+  // el helper
+  + 'function el(t,a,c){var e=document.createElement(t);if(a)Object.keys(a).forEach(function(k){'
+  + 'if(k==="textContent")e.textContent=a[k];else if(k==="className")e.className=a[k];'
+  + 'else if(k.startsWith("on"))e.addEventListener(k.slice(2),a[k]);else e.setAttribute(k,a[k])});'
+  + 'if(c)(Array.isArray(c)?c:[c]).forEach(function(x){if(typeof x==="string")e.appendChild(document.createTextNode(x));'
+  + 'else if(x)e.appendChild(x)});return e}\n'
+  // init
+  + 'document.getElementById("btn-network").addEventListener("click",function(){switchView("network")});\n'
+  + 'document.getElementById("btn-wordcloud").addEventListener("click",function(){switchView("wordcloud")});\n'
+  + 'window.addEventListener("DOMContentLoaded",function(){'
+  + 'DATA.nodes.forEach(function(n){nodeMap[n.id]=n});init()});\n'
+  // init function
+  + initFn()
+  // interactions
+  + onNodeClickFn()
+  + focusNodeFn()
+  + resetViewFn()
+  + updateBreadcrumbFn()
+  + showSidePanelFn()
+  + buildEmailRowFn()
+  + buildStatBoxFn()
+  + buildSectionFn()
+  + drawConvexHullsFn()
+  + grahamScanFn()
+  + crossProductFn()
+  + onDoubleClickFn()
+  + switchViewFn()
+  + renderWordCloudFn()
+  + renderLegendFn()
+  + highlightCommunityFn();
+}
+
+// --- Standalone script function generators ---
+// These return minified versions of the existing functions for the exported HTML.
+
+function initFn() {
+  return 'function init(){'
+  // Exported HTML: explicitly size containers before vis.js init
+  + 'var th=document.getElementById("toolbar").offsetHeight||44;'
+  + 'var mh=window.innerHeight-th;'
+  + 'document.getElementById("main").style.height=mh+"px";'
+  + 'document.getElementById("network-container").style.height=mh+"px";'
+  + 'window.addEventListener("resize",function(){'
+  + 'var h=window.innerHeight-(document.getElementById("toolbar").offsetHeight||44);'
+  + 'document.getElementById("main").style.height=h+"px";'
+  + 'document.getElementById("network-container").style.height=h+"px";'
+  + 'if(network)network.redraw()});'
+  + 'document.getElementById("stat-nodes").textContent=DATA.analysis.total_nodes+" nodes";'
+  + 'document.getElementById("stat-edges").textContent=DATA.analysis.total_edges+" edges";'
+  + 'document.getElementById("stat-communities").textContent=DATA.communities.length+" communities";'
+  + 'var vn=DATA.nodes.map(function(n){return{id:n.id,label:n.label,color:{background:n.color,'
+  + 'border:n.is_cc_key?"#f59e0b":(n.is_hub?"#fff":n.color),highlight:{background:"#fff",border:n.color}},'
+  + 'size:n.size,font:{color:"#ddd",size:11,face:"sans-serif"},borderWidth:n.is_cc_key||n.is_hub?3:1,shape:"dot"}});'
+  + 'var ve=DATA.edges.map(function(e,i){return{id:"e"+i,from:e.from,to:e.to,width:e.width,'
+  + 'color:{color:"#ffffff18",highlight:"#6366f1",hover:"#6366f188"},arrows:{to:{enabled:true,scaleFactor:0.4}},'
+  + 'smooth:{type:"continuous"}}});'
+  + 'allNodes.add(vn);allEdges.add(ve);'
+  + 'var c=document.getElementById("network-container");'
+  + 'network=new vis.Network(c,{nodes:allNodes,edges:allEdges},{physics:{solver:"barnesHut",'
+  + 'barnesHut:{gravitationalConstant:-3000,centralGravity:0.1,springLength:120,springConstant:0.02,damping:0.3},'
+  + 'stabilization:{iterations:200}},interaction:{hover:true,tooltipDelay:200,zoomView:true,dragView:true},'
+  + 'layout:{improvedLayout:true}});'
+  + 'network.on("click",onNodeClick);network.on("doubleClick",onDoubleClick);'
+  + 'network.on("afterDrawing",drawConvexHulls);renderLegend()}\n';
+}
+
+function onNodeClickFn() {
+  return 'function onNodeClick(p){if(p.nodes.length===0){if(focusedNode)resetView();return}'
+  + 'var id=p.nodes[0];if(network.isCluster(id))return;focusNode(id)}\n';
+}
+
+function focusNodeFn() {
+  return 'function focusNode(nodeId){var node=nodeMap[nodeId];if(!node)return;focusedNode=nodeId;'
+  + 'var ce=DATA.edges.filter(function(e){return e.from===nodeId||e.to===nodeId});'
+  + 'var cn=new Set([nodeId]);ce.forEach(function(e){cn.add(e.from);cn.add(e.to)});'
+  + 'var fn=DATA.nodes.filter(function(n){return cn.has(n.id)}).map(function(n){return{id:n.id,label:n.label,'
+  + 'color:{background:n.id===nodeId?"#fff":n.color,border:n.id===nodeId?n.color:(n.is_cc_key?"#f59e0b":n.color),'
+  + 'highlight:{background:"#fff",border:n.color}},size:n.id===nodeId?n.size*1.5:n.size,'
+  + 'font:{color:"#ddd",size:n.id===nodeId?14:11,face:"sans-serif"},'
+  + 'borderWidth:n.id===nodeId?4:(n.is_cc_key||n.is_hub?3:1),shape:"dot"}});'
+  + 'var fe=ce.map(function(e,i){return{id:"fe"+i,from:e.from,to:e.to,width:e.width,'
+  + 'color:{color:"#ffffff30",highlight:"#6366f1",hover:"#6366f188"},'
+  + 'arrows:{to:{enabled:true,scaleFactor:0.4}},smooth:{type:"continuous"}}});'
+  + 'allNodes.clear();allEdges.clear();allNodes.add(fn);allEdges.add(fe);'
+  + 'network.fit({animation:{duration:400,easingFunction:"easeInOutQuad"}});'
+  + 'updateBreadcrumb(node.name);showSidePanel(nodeId)}\n';
+}
+
+function resetViewFn() {
+  return 'function resetView(){focusedNode=null;'
+  + 'var vn=DATA.nodes.map(function(n){return{id:n.id,label:n.label,color:{background:n.color,'
+  + 'border:n.is_cc_key?"#f59e0b":(n.is_hub?"#fff":n.color),highlight:{background:"#fff",border:n.color}},'
+  + 'size:n.size,font:{color:"#ddd",size:11,face:"sans-serif"},borderWidth:n.is_cc_key||n.is_hub?3:1,shape:"dot"}});'
+  + 'var ve=DATA.edges.map(function(e,i){return{id:"e"+i,from:e.from,to:e.to,width:e.width,'
+  + 'color:{color:"#ffffff18",highlight:"#6366f1",hover:"#6366f188"},arrows:{to:{enabled:true,scaleFactor:0.4}},'
+  + 'smooth:{type:"continuous"}}});'
+  + 'allNodes.clear();allEdges.clear();allNodes.add(vn);allEdges.add(ve);'
+  + 'network.fit({animation:{duration:400,easingFunction:"easeInOutQuad"}});'
+  + 'updateBreadcrumb(null);document.getElementById("side-panel").classList.remove("open")}\n';
+}
+
+function updateBreadcrumbFn() {
+  return 'function updateBreadcrumb(name){var bc=document.getElementById("breadcrumb");'
+  + 'while(bc.firstChild)bc.removeChild(bc.firstChild);'
+  + 'if(!name){bc.appendChild(el("span",{className:"current",textContent:"All"}))}else{'
+  + 'bc.appendChild(el("a",{className:"bc-link",textContent:"All",onclick:resetView}));'
+  + 'bc.appendChild(el("span",{className:"sep",textContent:" > "}));'
+  + 'bc.appendChild(el("span",{className:"current",textContent:name}))}}\n';
+}
+
+function showSidePanelFn() {
+  return 'function showSidePanel(nodeId){var node=nodeMap[nodeId];if(!node)return;'
+  + 'var panel=document.getElementById("side-panel");while(panel.firstChild)panel.removeChild(panel.firstChild);'
+  + 'var header=el("div",{className:"panel-header"},[el("div",{className:"panel-name",textContent:node.name}),buildEmailRow(node.email)]);'
+  + 'panel.appendChild(header);'
+  + 'if(node.is_cc_key||node.is_hub){var bd=el("div",{className:"panel-badges"});'
+  + 'if(node.is_cc_key)bd.appendChild(el("span",{className:"badge badge-cc",textContent:"Passive Observer"}));'
+  + 'if(node.is_hub)bd.appendChild(el("span",{className:"badge badge-hub",textContent:"Hub"}));panel.appendChild(bd)}'
+  + 'var stats=el("div",{className:"panel-stats"},[buildStatBox(node.sent,"Mentions"),'
+  + 'buildStatBox(node.received,"Mentioned"),buildStatBox(node.cc_count,"Reactions")]);panel.appendChild(stats);'
+  + 'var toE=DATA.edges.filter(function(e){return e.from===nodeId&&e.to_weight>0});'
+  + 'var ccE=DATA.edges.filter(function(e){return e.from===nodeId&&e.cc_weight>0});'
+  + 'var frE=DATA.edges.filter(function(e){return e.to===nodeId});'
+  + 'var toL=toE.map(function(e){return{email:e.to,name:(nodeMap[e.to]||{}).name||e.to,count:e.to_weight}}).sort(function(a,b){return b.count-a.count});'
+  + 'var ccL=ccE.map(function(e){return{email:e.to,name:(nodeMap[e.to]||{}).name||e.to,count:e.cc_weight}}).sort(function(a,b){return b.count-a.count});'
+  + 'var frL=frE.map(function(e){return{email:e.from,name:(nodeMap[e.from]||{}).name||e.from,count:e.to_weight+e.cc_weight}}).sort(function(a,b){return b.count-a.count});'
+  + 'if(toL.length>0)panel.appendChild(buildSection("Mention先",toL));'
+  + 'if(ccL.length>0)panel.appendChild(buildSection("Reaction先",ccL));'
+  + 'if(frL.length>0)panel.appendChild(buildSection("受信元",frL));'
+  + 'panel.classList.add("open")}\n';
+}
+
+function buildEmailRowFn() {
+  return 'function buildEmailRow(email){var row=el("div",{className:"panel-email-row"});'
+  + 'row.appendChild(el("span",{textContent:email}));'
+  + 'var btn=el("button",{className:"copy-btn",textContent:"Copy",onclick:function(){'
+  + 'navigator.clipboard.writeText(email).then(function(){btn.textContent="Copied!";'
+  + 'setTimeout(function(){btn.textContent="Copy"},1500)})}});row.appendChild(btn);return row}\n';
+}
+
+function buildStatBoxFn() {
+  return 'function buildStatBox(v,l){return el("div",{className:"stat-box"},'
+  + '[el("div",{className:"stat-value",textContent:String(v)}),el("div",{className:"stat-label",textContent:l})])}\n';
+}
+
+function buildSectionFn() {
+  return 'function buildSection(title,items){var sec=el("div",{className:"panel-section"});'
+  + 'var tog=el("div",{className:"section-toggle"},[el("span",{textContent:title+" ("+items.length+")"}),el("span",{className:"arrow",textContent:"\\u25B6"})]);'
+  + 'var list=el("div",{className:"section-list"});'
+  + 'tog.addEventListener("click",function(){tog.classList.toggle("open");list.classList.toggle("open")});'
+  + 'items.forEach(function(item){var row=el("div",{className:"section-item"},'
+  + '[el("span",{textContent:item.name}),el("span",{className:"count",textContent:String(item.count)})]);'
+  + 'row.addEventListener("click",function(){focusNode(item.email)});list.appendChild(row)});'
+  + 'sec.appendChild(tog);sec.appendChild(list);return sec}\n';
+}
+
+function drawConvexHullsFn() {
+  return 'function drawConvexHulls(ctx){if(focusedNode)return;var pos=network.getPositions();'
+  + 'if(!pos||Object.keys(pos).length===0)return;'
+  + 'DATA.communities.forEach(function(comm){if(comm.size<3)return;if(clusteredCommunities.has(comm.id))return;'
+  + 'var pts=[];comm.members.forEach(function(m){var p=pos[m.email];if(p)pts.push([p.x,p.y])});'
+  + 'if(pts.length<3)return;var hull=grahamScan(pts);if(hull.length<3)return;'
+  + 'var cx=hull.reduce(function(s,p){return s+p[0]},0)/hull.length;'
+  + 'var cy=hull.reduce(function(s,p){return s+p[1]},0)/hull.length;var pad=40;'
+  + 'ctx.beginPath();hull.forEach(function(p,i){var dx=p[0]-cx,dy=p[1]-cy,d=Math.sqrt(dx*dx+dy*dy);'
+  + 'var ox=p[0]+(d>0?dx/d*pad:0),oy=p[1]+(d>0?dy/d*pad:0);'
+  + 'if(i===0)ctx.moveTo(ox,oy);else ctx.lineTo(ox,oy)});ctx.closePath();'
+  + 'ctx.fillStyle=comm.color+"14";ctx.fill();ctx.strokeStyle=comm.color+"26";ctx.lineWidth=1;ctx.stroke()})}\n';
+}
+
+function grahamScanFn() {
+  return 'function grahamScan(pts){if(pts.length<3)return pts.slice();var lo=0;'
+  + 'for(var i=1;i<pts.length;i++){if(pts[i][1]<pts[lo][1]||(pts[i][1]===pts[lo][1]&&pts[i][0]<pts[lo][0]))lo=i}'
+  + 'var t=pts[0];pts[0]=pts[lo];pts[lo]=t;var pv=pts[0];'
+  + 'var s=pts.slice(1).sort(function(a,b){return Math.atan2(a[1]-pv[1],a[0]-pv[0])-Math.atan2(b[1]-pv[1],b[0]-pv[0])});'
+  + 'var st=[pv,s[0]];for(var i=1;i<s.length;i++){while(st.length>1&&crossProduct(st[st.length-2],st[st.length-1],s[i])<=0)st.pop();'
+  + 'st.push(s[i])}return st}\n';
+}
+
+function crossProductFn() {
+  return 'function crossProduct(o,a,b){return(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0])}\n';
+}
+
+function onDoubleClickFn() {
+  return 'function onDoubleClick(p){if(p.nodes.length===0)return;var id=p.nodes[0];'
+  + 'if(network.isCluster(id)){network.openCluster(id);'
+  + 'var ci=parseInt(id.replace("cluster_",""),10);clusteredCommunities.delete(ci);return}'
+  + 'var node=nodeMap[id];if(!node)return;var ci=node.community;var comm=DATA.communities[ci];'
+  + 'if(!comm||comm.size<2)return;var me=new Set(comm.members.map(function(m){return m.email}));'
+  + 'network.cluster({joinCondition:function(o){return me.has(o.id)},clusterNodeProperties:'
+  + '{id:"cluster_"+ci,label:"Cluster "+ci+" ("+comm.size+")",color:{background:comm.color,border:comm.color},'
+  + 'size:30,shape:"dot",font:{color:"#ddd",size:13},borderWidth:2}});clusteredCommunities.add(ci)}\n';
+}
+
+function switchViewFn() {
+  return 'function switchView(v){currentView=v;var nc=document.getElementById("network-container");'
+  + 'var wc=document.getElementById("wordcloud-container");var bn=document.getElementById("btn-network");'
+  + 'var bw=document.getElementById("btn-wordcloud");var lg=document.getElementById("legend");'
+  + 'if(v==="network"){nc.style.display="block";wc.style.display="none";bn.classList.add("active");'
+  + 'bw.classList.remove("active");lg.style.display="block";if(network)network.redraw()}'
+  + 'else{nc.style.display="none";wc.style.display="block";bn.classList.remove("active");'
+  + 'bw.classList.add("active");lg.style.display="none";renderWordCloud()}}\n';
+}
+
+function renderWordCloudFn() {
+  return 'function renderWordCloud(){var cv=document.getElementById("wordcloud-canvas");'
+  + 'var ct=document.getElementById("wordcloud-container");cv.width=ct.clientWidth;cv.height=ct.clientHeight;'
+  + 'if(DATA.wordcloud_data.length===0)return;'
+  + 'var mx=Math.max.apply(null,DATA.wordcloud_data.map(function(d){return d.size}));'
+  + 'var mnF=12,mxF=Math.min(80,cv.height/4);'
+  + 'var list=DATA.wordcloud_data.map(function(d){return[d.text,mnF+(d.size/mx)*(mxF-mnF)]});'
+  + 'var cm={};DATA.wordcloud_data.forEach(function(d){cm[d.text]=d.color});'
+  + 'WordCloud(cv,{list:list,gridSize:8,weightFactor:1,'
+  + 'fontFamily:"-apple-system,BlinkMacSystemFont,\\"Segoe UI\\",Roboto,sans-serif",'
+  + 'color:function(w){return cm[w]||"#6366f1"},backgroundColor:"#1a1a2e",rotateRatio:0.1,'
+  + 'click:function(item){var e=DATA.wordcloud_data.find(function(d){return d.text===item[0]});'
+  + 'if(e){switchView("network");setTimeout(function(){focusNode(e.email)},300)}}})}\n';
+}
+
+function renderLegendFn() {
+  return 'function renderLegend(){var c=document.getElementById("legend");while(c.firstChild)c.removeChild(c.firstChild);'
+  + 'c.appendChild(el("h4",{textContent:"Communities"}));'
+  + 'DATA.communities.forEach(function(comm){var names=comm.members.slice(0,3).map(function(m){return m.name}).join(", ");'
+  + 'if(comm.size>3)names+=" +"+(comm.size-3);'
+  + 'var item=el("div",{className:"legend-item"},[el("div",{className:"legend-dot",style:"background:"+comm.color}),el("span",{textContent:names})]);'
+  + 'item.addEventListener("click",function(){highlightCommunity(comm.id)});c.appendChild(item)});'
+  + 'if(DATA.analysis.cc_key_persons.length>0){'
+  + 'c.appendChild(el("h4",{textContent:"Passive Observers",style:"margin-top:10px"}));'
+  + 'DATA.analysis.cc_key_persons.forEach(function(p){'
+  + 'var item=el("div",{className:"legend-item"},[el("div",{className:"legend-dot",style:"background:#f59e0b"}),'
+  + 'el("span",{textContent:p.name+" ("+p.cc_count+")"})]);'
+  + 'item.addEventListener("click",function(){focusNode(p.email)});c.appendChild(item)})}}\n';
+}
+
+function highlightCommunityFn() {
+  return 'function highlightCommunity(ci){var comm=DATA.communities[ci];if(!comm)return;'
+  + 'var ids=comm.members.map(function(m){return m.email});network.selectNodes(ids);'
+  + 'network.fit({nodes:ids,animation:{duration:400,easingFunction:"easeInOutQuad"}})}\n';
+}
+</script>
+</body>
+</html>
 </body>
 </html>
