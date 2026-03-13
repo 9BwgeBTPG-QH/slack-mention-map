@@ -37,10 +37,10 @@ def slack_api_call(api_method, **kwargs):
                 retry_after = int(e.response.headers.get("Retry-After", 5))
                 print(f"Rate limited. Retrying after {retry_after}s (attempt {attempt + 1}/{MAX_RETRIES})")
                 time.sleep(retry_after)
+                if attempt == MAX_RETRIES - 1:
+                    raise
             else:
                 raise
-    # 最後の試行
-    return api_method(**kwargs)
 
 
 # .envファイルから環境変数を読み込む
@@ -114,7 +114,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self.wfile.write(content)
         except Exception as e:
             print(f"Error serving template: {e}")
-            self.send_error(500, str(e))
+            self.send_error(500, "Internal server error")
 
     def _serve_vis_data(self):
         """vis.js ネットワークグラフ用 JSON を配信"""
@@ -134,7 +134,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
             self._send_json(200, response_data)
         except Exception as e:
             print(f"Error serving vis-data: {e}")
-            self._send_json(500, {"error": str(e)})
+            self._send_json(500, {"error": "Internal server error"})
 
     def _send_json(self, status, data):
         """JSON レスポンスを送信するヘルパー"""
@@ -165,7 +165,7 @@ class DashboardServer:
         last_err = None
         for port in range(self.port, self.port + 10):
             try:
-                self.server = _ReusableTCPServer(("", port), DashboardHandler)
+                self.server = _ReusableTCPServer(("127.0.0.1", port), DashboardHandler)
                 self.port = port
                 break
             except OSError as e:
@@ -406,6 +406,7 @@ def get_channel_history(
             # リトライ後も失敗した場合は中断
             error_msg = f"履歴取得エラー: {e.response['error']}"
             print(error_msg)
+            print(f"Warning: message fetch interrupted: {e}. Proceeding with {len(messages)} messages collected so far.")
             if thread_ts and dm_channel_id:
                 client.chat_postMessage(
                     channel=dm_channel_id, thread_ts=thread_ts,
@@ -415,6 +416,7 @@ def get_channel_history(
         except Exception as e:
             error_msg = f"履歴取得エラー: {str(e)}"
             print(error_msg)
+            print(f"Warning: message fetch interrupted: {e}. Proceeding with {len(messages)} messages collected so far.")
             if thread_ts and dm_channel_id:
                 client.chat_postMessage(
                     channel=dm_channel_id, thread_ts=thread_ts,
@@ -467,6 +469,7 @@ def fetch_messages_with_threads(
 
         except Exception as e:
             print(f"Warning: Could not fetch thread replies for {msg['ts']}: {e}")
+            print(f"Warning: thread fetch interrupted: {e}. Proceeding with {thread_count} thread replies collected so far.")
 
     if thread_ts and dm_channel_id:
         client.chat_postMessage(

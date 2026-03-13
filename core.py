@@ -97,7 +97,7 @@ def parse_address_field(field: str) -> list[tuple[str, str]]:
         return []
     field = str(field)
     results = []
-    for entry in field.split("; "):
+    for entry in field.split(";"):
         entry = entry.strip()
         if not entry:
             continue
@@ -123,7 +123,7 @@ def build_graph(df: pd.DataFrame, config: dict | None = None, domain_map: dict |
       domain_map: user_id → email domain のマッピング (省略時は from_domain カラムから取得)
     """
     if config is None:
-        config = DEFAULT_CONFIG
+        config = load_config_from_env()
     if domain_map is None:
         domain_map = {}
 
@@ -214,10 +214,18 @@ def analyze_graph(G: nx.DiGraph, total_mails: int, config: dict | None = None) -
         dict with keys: total_mails, cc_key_persons, hubs, communities, community_map
     """
     if config is None:
-        config = DEFAULT_CONFIG
+        config = load_config_from_env()
+
+    if G.number_of_nodes() == 0:
+        return {
+            "total_mails": 0,
+            "communities": [],
+            "community_map": {},
+            "cc_key_persons": [],
+            "hubs": [],
+        }
+
     thresholds = config.get("thresholds", {})
-    if total_mails <= 0:
-        total_mails = 1
 
     # --- CC キーマン ---
     cc_threshold = thresholds.get("cc_key_person_threshold", 0.30)
@@ -311,7 +319,7 @@ def analyze_graph(G: nx.DiGraph, total_mails: int, config: dict | None = None) -
 def generate_vis_data(G: nx.DiGraph, analysis: dict, config: dict | None = None) -> dict:
     """vis.js 用の JSON データを生成."""
     if config is None:
-        config = DEFAULT_CONFIG
+        config = load_config_from_env()
     thresholds = config.get("thresholds", {})
     min_weight = thresholds.get("min_edge_weight", 1)
     community_map = analysis["community_map"]

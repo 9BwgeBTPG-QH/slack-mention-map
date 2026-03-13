@@ -357,6 +357,7 @@ var focusedNode = null;
 var clusteredCommunities = new Set();
 var currentView = 'network';
 var nodeMap = {};
+var communityMap = {};
 
 // ===========================================================================
 // DOM helpers
@@ -399,9 +400,14 @@ async function fetchAndInit() {
     if (!DATA || !DATA.nodes || !DATA.edges) {
       throw new Error('Invalid data format');
     }
+    if (!DATA.analysis) DATA.analysis = { total_nodes: 0, total_edges: 0, cc_key_persons: [], hubs: [] };
+    if (!DATA.communities) DATA.communities = [];
+    if (!DATA.wordcloud_data) DATA.wordcloud_data = [];
+    if (!DATA.analysis.cc_key_persons) DATA.analysis.cc_key_persons = [];
 
-    // Build lookup map
+    // Build lookup maps
     DATA.nodes.forEach(function(n) { nodeMap[n.id] = n; });
+    DATA.communities.forEach(function(c) { communityMap[c.id] = c; });
 
     // Update page title & channel info
     var channelName = DATA.channel_name || '';
@@ -823,7 +829,7 @@ function onDoubleClick(params) {
   var node = nodeMap[nodeId];
   if (!node) return;
   var commId = node.community;
-  var comm = DATA.communities[commId];
+  var comm = communityMap[commId];
   if (!comm || comm.size < 2) return;
 
   var memberEmails = new Set(comm.members.map(function(m) { return m.email; }));
@@ -950,7 +956,7 @@ function renderLegend() {
 }
 
 function highlightCommunity(commId) {
-  var comm = DATA.communities[commId];
+  var comm = communityMap[commId];
   if (!comm) return;
   var memberIds = comm.members.map(function(m) { return m.email; });
   network.selectNodes(memberIds);
@@ -1027,7 +1033,7 @@ function exportHTML() {
   link.download = fileName;
   link.href = URL.createObjectURL(blob);
   link.click();
-  URL.revokeObjectURL(link.href);
+  setTimeout(function() { URL.revokeObjectURL(link.href); }, 10000);
 }
 
 function escapeHtml(str) {
