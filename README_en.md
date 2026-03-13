@@ -255,6 +255,35 @@ slack-mention-map/
 - For large graphs with 200+ nodes, Betweenness centrality is approximated with k=100 sampling
 - Keep tokens secure and never publish the `.env` file to GitHub or other public repositories
 
+## Privacy & Data Handling
+
+### Data Collected
+
+This tool retrieves the following data from the target Slack channel via the Slack API:
+
+- Message authors, @mention targets, and thread participants
+- Users who reacted to messages (emoji types are not recorded)
+- First 50 characters of each message (for internal processing only; not displayed in the dashboard)
+- User display names and email addresses (for node labeling)
+
+**Full message content is never collected or stored.**
+
+### Data Processing & Storage
+
+- All processing happens **entirely on your local machine**. No data is sent to any external server
+- Analysis results are held in memory and discarded when the application exits
+- If you use the HTML export feature, aggregated network data (user names, mention counts, community info) is embedded in the file
+
+### Recommendations for Workspace Admins
+
+- Before using this tool, **inform members** of the target channel that their mention relationships will be visualized
+- Exported HTML files contain user names and communication structures — **be mindful of who you share them with**
+- Ensure usage complies with your workspace's data policies and applicable privacy regulations (e.g., GDPR)
+
+### Slack API Permissions
+
+This tool requests only the minimum permissions necessary for analysis. See [Slack App Setup](#slack-app-setup) for details. The bot does not perform any write operations other than responding to slash commands and sending DM notifications.
+
 ## License
 
 MIT
