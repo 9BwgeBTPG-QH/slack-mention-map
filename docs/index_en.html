@@ -1,0 +1,348 @@
+<!DOCTYPE html>
+<html lang="en" style="height:100%;margin:0;padding:0;">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>#sample-project - Slack Mention Analysis (30 days) - Sample</title>
+<script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.1.2/wordcloud2.min.js"></script>
+<style>
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    height: 100%;
+    width: 100%;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Hiragino Kaku Gothic Pro", sans-serif;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    overflow: hidden;
+  }
+
+  /* --- Loading overlay --- */
+  #loading-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #1a1a2e;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+  }
+  #loading-overlay .spinner {
+    width: 40px; height: 40px;
+    border: 3px solid #334;
+    border-top-color: #6366f1;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    margin-bottom: 16px;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* --- Error --- */
+  #error-container {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: #1a1a2e;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 9998;
+    padding: 20px;
+    text-align: center;
+  }
+  #error-container h2 { color: #ef4444; margin-bottom: 12px; }
+  #error-container p { color: #8899aa; margin-bottom: 20px; }
+  #error-container button {
+    padding: 8px 20px;
+    background: #6366f1;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 14px;
+  }
+
+  /* --- Toolbar --- */
+  #toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px;
+    background: #16213e;
+    border-bottom: 1px solid #0f3460;
+    height: 44px;
+    z-index: 100;
+  }
+  #toolbar .left { display: flex; align-items: center; gap: 12px; }
+  #toolbar .right { display: flex; align-items: center; gap: 16px; font-size: 13px; color: #8899aa; }
+
+  #channel-info {
+    font-size: 13px;
+    color: #8899aa;
+    margin-right: 8px;
+  }
+  #channel-info .channel-name {
+    color: #6366f1;
+    font-weight: 600;
+  }
+
+  #breadcrumb {
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  #breadcrumb .bc-link {
+    color: #6366f1;
+    text-decoration: none;
+    cursor: pointer;
+  }
+  #breadcrumb .bc-link:hover { text-decoration: underline; }
+  #breadcrumb .sep { color: #555; margin: 0 2px; }
+  #breadcrumb .current { color: #e0e0e0; font-weight: 600; }
+
+  .view-btn {
+    padding: 4px 12px;
+    border: 1px solid #334;
+    border-radius: 4px;
+    background: transparent;
+    color: #aaa;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.15s;
+  }
+  .view-btn:hover { border-color: #6366f1; color: #e0e0e0; }
+  .view-btn.active { background: #6366f1; color: #fff; border-color: #6366f1; }
+
+  .toolbar-btn {
+    padding: 4px 10px;
+    border: 1px solid #334;
+    border-radius: 4px;
+    background: transparent;
+    color: #8899aa;
+    cursor: pointer;
+    font-size: 12px;
+    transition: all 0.15s;
+  }
+  .toolbar-btn:hover { border-color: #6366f1; color: #e0e0e0; }
+
+  /* --- Main layout --- */
+  #main {
+    position: absolute;
+    top: 44px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+  }
+
+  #network-container {
+    flex: 1;
+    position: relative;
+    min-height: 0;
+  }
+
+  #wordcloud-container {
+    flex: 1;
+    display: none;
+    position: relative;
+    min-height: 0;
+  }
+  #wordcloud-canvas {
+    width: 100%;
+    height: 100%;
+  }
+
+  /* --- Side panel --- */
+  #side-panel {
+    width: 320px;
+    background: #16213e;
+    border-left: 1px solid #0f3460;
+    overflow-y: auto;
+    display: none;
+    flex-shrink: 0;
+  }
+  #side-panel.open { display: block; }
+
+  .panel-header {
+    padding: 16px;
+    border-bottom: 1px solid #0f3460;
+  }
+  .panel-name {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    word-break: break-all;
+  }
+  .panel-email-row {
+    font-size: 13px;
+    color: #8899aa;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .copy-btn {
+    padding: 2px 8px;
+    border: 1px solid #334;
+    border-radius: 3px;
+    background: transparent;
+    color: #6366f1;
+    cursor: pointer;
+    font-size: 11px;
+  }
+  .copy-btn:hover { background: #6366f1; color: #fff; }
+
+  .panel-stats {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    padding: 12px 16px;
+    border-bottom: 1px solid #0f3460;
+  }
+  .stat-box {
+    text-align: center;
+    padding: 8px;
+    background: #1a1a2e;
+    border-radius: 6px;
+  }
+  .stat-value { font-size: 20px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: #8899aa; margin-top: 2px; }
+
+  .panel-badges {
+    padding: 8px 16px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    padding: 2px 8px;
+    border-radius: 10px;
+    font-size: 11px;
+    font-weight: 600;
+  }
+  .badge-cc { background: #f59e0b33; color: #f59e0b; }
+  .badge-hub { background: #6366f133; color: #6366f1; }
+
+  .panel-section {
+    border-top: 1px solid #0f3460;
+  }
+  .section-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 16px;
+    cursor: pointer;
+    user-select: none;
+    font-size: 13px;
+    font-weight: 600;
+    color: #aab;
+  }
+  .section-toggle:hover { background: #1a1a3e; }
+  .section-toggle .arrow { transition: transform 0.2s; }
+  .section-toggle.open .arrow { transform: rotate(90deg); }
+
+  .section-list {
+    display: none;
+    padding: 0 16px 8px;
+  }
+  .section-list.open { display: block; }
+  .section-item {
+    padding: 4px 0;
+    font-size: 13px;
+    cursor: pointer;
+    color: #ccd;
+    display: flex;
+    justify-content: space-between;
+  }
+  .section-item:hover { color: #6366f1; }
+  .section-item .count { color: #667; font-size: 12px; }
+
+  /* --- Legend --- */
+  #legend {
+    position: absolute;
+    bottom: 12px;
+    left: 12px;
+    background: #16213eee;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 12px;
+    max-height: 260px;
+    overflow-y: auto;
+    z-index: 50;
+  }
+  #legend h4 { margin-bottom: 6px; color: #aab; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 2px 0;
+    cursor: pointer;
+  }
+  .legend-item:hover { opacity: 0.8; }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* --- Scrollbar --- */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #334; border-radius: 3px; }
+
+</style>
+</head>
+<body style="margin:0;padding:0;height:100%;width:100%;background:#1a1a2e;color:#e0e0e0;overflow:hidden;font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
+<!-- Toolbar -->
+<div id="toolbar" style="display:flex;align-items:center;justify-content:space-between;padding:8px 16px;background:#16213e;border-bottom:1px solid #0f3460;height:44px;z-index:100;box-sizing:border-box;">
+  <div class="left" style="display:flex;align-items:center;gap:12px;">
+    <div id="channel-info" style="font-size:13px;color:#8899aa;"><span class="channel-name" style="color:#6366f1;font-weight:600;">#sample-project</span> / 30 days / sample</div>
+    <div id="breadcrumb" style="font-size:14px;display:flex;align-items:center;gap:4px;"><span class="current" style="color:#e0e0e0;font-weight:600;">All</span></div>
+    <button class="view-btn active" id="btn-network" style="padding:4px 12px;border:1px solid #6366f1;border-radius:4px;background:#6366f1;color:#fff;cursor:pointer;font-size:13px;">Network</button>
+    <button class="view-btn" id="btn-wordcloud" style="padding:4px 12px;border:1px solid #334;border-radius:4px;background:transparent;color:#aaa;cursor:pointer;font-size:13px;">Word Cloud</button>
+  </div>
+  <div class="right" style="display:flex;align-items:center;gap:16px;font-size:13px;color:#8899aa;">
+    <span id="stat-nodes"></span>
+    <span id="stat-edges"></span>
+    <span id="stat-communities"></span>
+  </div>
+</div>
+<div id="main" style="position:absolute;top:44px;left:0;right:0;bottom:0;display:flex;">
+  <div id="network-container" style="flex:1;position:relative;min-height:0;height:100%;"></div>
+  <div id="wordcloud-container" style="flex:1;display:none;position:relative;min-height:0;"><canvas id="wordcloud-canvas" style="width:100%;height:100%;"></canvas></div>
+  <div id="side-panel" style="width:320px;background:#16213e;border-left:1px solid #0f3460;overflow-y:auto;display:none;flex-shrink:0;"></div>
+</div>
+<div id="legend" style="position:absolute;bottom:12px;left:12px;background:#16213eee;border:1px solid #0f3460;border-radius:8px;padding:10px 14px;font-size:12px;z-index:200;"></div>
+<script>
+var DATA = {"nodes": [{"id": "U001", "label": "Alex Johnson", "name": "Alex Johnson", "email": "U001", "domain": "", "is_internal": true, "sent": 9, "received": 14, "cc_count": 5, "community": 0, "color": "#6366f1", "size": 22.0, "is_cc_key": false, "is_hub": true}, {"id": "U002", "label": "Sarah Chen", "name": "Sarah Chen", "email": "U002", "domain": "", "is_internal": true, "sent": 5, "received": 11, "cc_count": 1, "community": 0, "color": "#6366f1", "size": 16.5, "is_cc_key": false, "is_hub": true}, {"id": "U003", "label": "Mike Williams", "name": "Mike Williams", "email": "U003", "domain": "", "is_internal": true, "sent": 3, "received": 7, "cc_count": 3, "community": 0, "color": "#6366f1", "size": 14.5, "is_cc_key": false, "is_hub": false}, {"id": "U010", "label": "Olivia Taylor", "name": "Olivia Taylor", "email": "U010", "domain": "", "is_internal": true, "sent": 0, "received": 0, "cc_count": 13, "community": 0, "color": "#6366f1", "size": 14.5, "is_cc_key": false, "is_hub": true}, {"id": "U020", "label": "Emma Clark", "name": "Emma Clark", "email": "U020", "domain": "", "is_internal": true, "sent": 0, "received": 0, "cc_count": 22, "community": 2, "color": "#10b981", "size": 19.0, "is_cc_key": true, "is_hub": true}, {"id": "U004", "label": "Emily Davis", "name": "Emily Davis", "email": "U004", "domain": "", "is_internal": true, "sent": 3, "received": 6, "cc_count": 2, "community": 0, "color": "#6366f1", "size": 13.5, "is_cc_key": false, "is_hub": false}, {"id": "U005", "label": "James Wilson", "name": "James Wilson", "email": "U005", "domain": "", "is_internal": true, "sent": 3, "received": 7, "cc_count": 2, "community": 0, "color": "#6366f1", "size": 14.0, "is_cc_key": false, "is_hub": false}, {"id": "U006", "label": "Lisa Anderson", "name": "Lisa Anderson", "email": "U006", "domain": "", "is_internal": true, "sent": 5, "received": 9, "cc_count": 4, "community": 1, "color": "#f59e0b", "size": 17.0, "is_cc_key": false, "is_hub": true}, {"id": "U007", "label": "David Martinez", "name": "David Martinez", "email": "U007", "domain": "", "is_internal": true, "sent": 4, "received": 6, "cc_count": 0, "community": 1, "color": "#f59e0b", "size": 13.0, "is_cc_key": false, "is_hub": true}, {"id": "U008", "label": "Rachel Kim", "name": "Rachel Kim", "email": "U008", "domain": "", "is_internal": true, "sent": 2, "received": 7, "cc_count": 0, "community": 1, "color": "#f59e0b", "size": 12.5, "is_cc_key": false, "is_hub": false}, {"id": "U009", "label": "Tom Brown", "name": "Tom Brown", "email": "U009", "domain": "", "is_internal": true, "sent": 2, "received": 3, "cc_count": 2, "community": 1, "color": "#f59e0b", "size": 11.5, "is_cc_key": false, "is_hub": false}, {"id": "U011", "label": "Ryan Thomas", "name": "Ryan Thomas", "email": "U011", "domain": "", "is_internal": true, "sent": 5, "received": 8, "cc_count": 2, "community": 2, "color": "#10b981", "size": 15.5, "is_cc_key": false, "is_hub": true}, {"id": "U012", "label": "Maria Garcia", "name": "Maria Garcia", "email": "U012", "domain": "", "is_internal": true, "sent": 3, "received": 6, "cc_count": 1, "community": 2, "color": "#10b981", "size": 13.0, "is_cc_key": false, "is_hub": false}, {"id": "U013", "label": "Kevin Lee", "name": "Kevin Lee", "email": "U013", "domain": "", "is_internal": true, "sent": 2, "received": 4, "cc_count": 0, "community": 2, "color": "#10b981", "size": 11.0, "is_cc_key": false, "is_hub": false}, {"id": "U014", "label": "Sophie Moore", "name": "Sophie Moore", "email": "U014", "domain": "", "is_internal": true, "sent": 2, "received": 3, "cc_count": 2, "community": 2, "color": "#10b981", "size": 11.5, "is_cc_key": false, "is_hub": false}, {"id": "U015", "label": "Chris Jackson", "name": "Chris Jackson", "email": "U015", "domain": "", "is_internal": true, "sent": 5, "received": 9, "cc_count": 2, "community": 3, "color": "#ef4444", "size": 16.0, "is_cc_key": false, "is_hub": true}, {"id": "U016", "label": "Amy White", "name": "Amy White", "email": "U016", "domain": "", "is_internal": true, "sent": 3, "received": 7, "cc_count": 0, "community": 3, "color": "#ef4444", "size": 13.0, "is_cc_key": false, "is_hub": true}, {"id": "U017", "label": "Brian Harris", "name": "Brian Harris", "email": "U017", "domain": "", "is_internal": true, "sent": 2, "received": 4, "cc_count": 0, "community": 3, "color": "#ef4444", "size": 11.0, "is_cc_key": false, "is_hub": false}, {"id": "U018", "label": "Grace Martin", "name": "Grace Martin", "email": "U018", "domain": "", "is_internal": true, "sent": 2, "received": 2, "cc_count": 1, "community": 3, "color": "#ef4444", "size": 10.5, "is_cc_key": false, "is_hub": false}, {"id": "U019", "label": "Nick Robinson", "name": "Nick Robinson", "email": "U019", "domain": "", "is_internal": true, "sent": 5, "received": 4, "cc_count": 0, "community": 1, "color": "#f59e0b", "size": 12.5, "is_cc_key": false, "is_hub": true}], "edges": [{"from": "U001", "to": "U002", "to_weight": 3, "cc_weight": 1, "weight": 4, "width": 1.2}, {"from": "U001", "to": "U003", "to_weight": 2, "cc_weight": 1, "weight": 3, "width": 1}, {"from": "U001", "to": "U010", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U001", "to": "U020", "to_weight": 0, "cc_weight": 5, "weight": 5, "width": 1.5}, {"from": "U001", "to": "U004", "to_weight": 2, "cc_weight": 1, "weight": 3, "width": 1}, {"from": "U001", "to": "U005", "to_weight": 3, "cc_weight": 1, "weight": 4, "width": 1.2}, {"from": "U001", "to": "U006", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U001", "to": "U007", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U001", "to": "U015", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U001", "to": "U016", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U001", "to": "U011", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U001", "to": "U012", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U001", "to": "U019", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U002", "to": "U001", "to_weight": 2, "cc_weight": 2, "weight": 4, "width": 1.2}, {"from": "U002", "to": "U003", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U002", "to": "U004", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U002", "to": "U020", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U002", "to": "U010", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U002", "to": "U005", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U002", "to": "U007", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U002", "to": "U006", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U003", "to": "U001", "to_weight": 2, "cc_weight": 1, "weight": 3, "width": 1}, {"from": "U003", "to": "U002", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U003", "to": "U004", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U003", "to": "U005", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U004", "to": "U003", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U004", "to": "U020", "to_weight": 0, "cc_weight": 3, "weight": 3, "width": 1}, {"from": "U004", "to": "U001", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U004", "to": "U005", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U004", "to": "U002", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U004", "to": "U010", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U005", "to": "U001", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U005", "to": "U002", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U005", "to": "U003", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U005", "to": "U010", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U005", "to": "U004", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U005", "to": "U015", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U006", "to": "U007", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U006", "to": "U008", "to_weight": 3, "cc_weight": 0, "weight": 3, "width": 1}, {"from": "U006", "to": "U010", "to_weight": 0, "cc_weight": 2, "weight": 2, "width": 1}, {"from": "U006", "to": "U009", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U006", "to": "U020", "to_weight": 0, "cc_weight": 2, "weight": 2, "width": 1}, {"from": "U006", "to": "U001", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U006", "to": "U002", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U006", "to": "U019", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U007", "to": "U006", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U007", "to": "U009", "to_weight": 1, "cc_weight": 2, "weight": 3, "width": 1}, {"from": "U007", "to": "U020", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U007", "to": "U008", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U007", "to": "U010", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U007", "to": "U002", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U007", "to": "U003", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U008", "to": "U006", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U008", "to": "U009", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U008", "to": "U020", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U008", "to": "U007", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U009", "to": "U007", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U009", "to": "U008", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U009", "to": "U006", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U011", "to": "U012", "to_weight": 3, "cc_weight": 1, "weight": 4, "width": 1.2}, {"from": "U011", "to": "U013", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U011", "to": "U020", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U011", "to": "U010", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U011", "to": "U014", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U011", "to": "U001", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U011", "to": "U019", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U012", "to": "U011", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U012", "to": "U014", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U012", "to": "U020", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U012", "to": "U013", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U012", "to": "U001", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U012", "to": "U010", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U013", "to": "U011", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U013", "to": "U014", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U013", "to": "U012", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U014", "to": "U012", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U014", "to": "U013", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U014", "to": "U011", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U014", "to": "U020", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U015", "to": "U016", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U015", "to": "U017", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U015", "to": "U010", "to_weight": 0, "cc_weight": 2, "weight": 2, "width": 1}, {"from": "U015", "to": "U018", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U015", "to": "U020", "to_weight": 0, "cc_weight": 2, "weight": 2, "width": 1}, {"from": "U015", "to": "U005", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U015", "to": "U001", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U015", "to": "U019", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U016", "to": "U015", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U016", "to": "U018", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U016", "to": "U020", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U016", "to": "U010", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U016", "to": "U001", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U016", "to": "U005", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U017", "to": "U015", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U017", "to": "U016", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U018", "to": "U016", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U018", "to": "U017", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U018", "to": "U015", "to_weight": 1, "cc_weight": 1, "weight": 2, "width": 1}, {"from": "U018", "to": "U020", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}, {"from": "U019", "to": "U001", "to_weight": 3, "cc_weight": 2, "weight": 5, "width": 1.5}, {"from": "U019", "to": "U006", "to_weight": 3, "cc_weight": 1, "weight": 4, "width": 1.2}, {"from": "U019", "to": "U011", "to_weight": 3, "cc_weight": 0, "weight": 3, "width": 1}, {"from": "U019", "to": "U015", "to_weight": 3, "cc_weight": 0, "weight": 3, "width": 1}, {"from": "U019", "to": "U002", "to_weight": 2, "cc_weight": 0, "weight": 2, "width": 1}, {"from": "U019", "to": "U008", "to_weight": 1, "cc_weight": 0, "weight": 1, "width": 1}, {"from": "U019", "to": "U020", "to_weight": 0, "cc_weight": 2, "weight": 2, "width": 1}, {"from": "U019", "to": "U010", "to_weight": 0, "cc_weight": 1, "weight": 1, "width": 1}], "communities": [{"id": 0, "color": "#6366f1", "size": 6, "members": [{"email": "U004", "name": "Emily Davis"}, {"email": "U010", "name": "Olivia Taylor"}, {"email": "U001", "name": "Alex Johnson"}, {"email": "U005", "name": "James Wilson"}, {"email": "U002", "name": "Sarah Chen"}, {"email": "U003", "name": "Mike Williams"}]}, {"id": 1, "color": "#f59e0b", "size": 5, "members": [{"email": "U008", "name": "Rachel Kim"}, {"email": "U006", "name": "Lisa Anderson"}, {"email": "U007", "name": "David Martinez"}, {"email": "U019", "name": "Nick Robinson"}, {"email": "U009", "name": "Tom Brown"}]}, {"id": 2, "color": "#10b981", "size": 5, "members": [{"email": "U012", "name": "Maria Garcia"}, {"email": "U020", "name": "Emma Clark"}, {"email": "U013", "name": "Kevin Lee"}, {"email": "U014", "name": "Sophie Moore"}, {"email": "U011", "name": "Ryan Thomas"}]}, {"id": 3, "color": "#ef4444", "size": 4, "members": [{"email": "U015", "name": "Chris Jackson"}, {"email": "U018", "name": "Grace Martin"}, {"email": "U016", "name": "Amy White"}, {"email": "U017", "name": "Brian Harris"}]}], "analysis": {"total_mails": 65, "total_nodes": 20, "total_edges": 107, "cc_key_persons": [{"email": "U020", "name": "Emma Clark", "cc_count": 22, "ratio": 0.338}], "hubs": [{"email": "U020", "name": "Emma Clark", "score": 0.4706, "degree_centrality": 0.6842, "betweenness_centrality": 0.257}, {"email": "U001", "name": "Alex Johnson", "score": 0.4077, "degree_centrality": 0.6842, "betweenness_centrality": 0.1312}, {"email": "U010", "name": "Olivia Taylor", "score": 0.3342, "degree_centrality": 0.5789, "betweenness_centrality": 0.0895}, {"email": "U002", "name": "Sarah Chen", "score": 0.2498, "degree_centrality": 0.4737, "betweenness_centrality": 0.0259}, {"email": "U015", "name": "Chris Jackson", "score": 0.2427, "degree_centrality": 0.4211, "betweenness_centrality": 0.0644}, {"email": "U007", "name": "David Martinez", "score": 0.24, "degree_centrality": 0.4211, "betweenness_centrality": 0.059}, {"email": "U006", "name": "Lisa Anderson", "score": 0.2331, "degree_centrality": 0.4211, "betweenness_centrality": 0.0451}, {"email": "U019", "name": "Nick Robinson", "score": 0.2261, "degree_centrality": 0.4211, "betweenness_centrality": 0.0311}, {"email": "U011", "name": "Ryan Thomas", "score": 0.2133, "degree_centrality": 0.3684, "betweenness_centrality": 0.0581}, {"email": "U016", "name": "Amy White", "score": 0.2081, "degree_centrality": 0.3684, "betweenness_centrality": 0.0479}, {"email": "U005", "name": "James Wilson", "score": 0.1939, "degree_centrality": 0.3684, "betweenness_centrality": 0.0194}, {"email": "U012", "name": "Maria Garcia", "score": 0.1796, "degree_centrality": 0.3158, "betweenness_centrality": 0.0433}, {"email": "U004", "name": "Emily Davis", "score": 0.1614, "degree_centrality": 0.3158, "betweenness_centrality": 0.0071}, {"email": "U008", "name": "Rachel Kim", "score": 0.1401, "degree_centrality": 0.2632, "betweenness_centrality": 0.0171}, {"email": "U003", "name": "Mike Williams", "score": 0.1338, "degree_centrality": 0.2632, "betweenness_centrality": 0.0044}, {"email": "U014", "name": "Sophie Moore", "score": 0.1112, "degree_centrality": 0.2105, "betweenness_centrality": 0.012}, {"email": "U018", "name": "Grace Martin", "score": 0.1111, "degree_centrality": 0.2105, "betweenness_centrality": 0.0116}, {"email": "U009", "name": "Tom Brown", "score": 0.0789, "degree_centrality": 0.1579, "betweenness_centrality": 0.0}, {"email": "U013", "name": "Kevin Lee", "score": 0.0789, "degree_centrality": 0.1579, "betweenness_centrality": 0.0}, {"email": "U017", "name": "Brian Harris", "score": 0.0789, "degree_centrality": 0.1579, "betweenness_centrality": 0.0}]}, "wordcloud_data": [{"text": "Alex Johnson", "size": 28, "email": "U001", "color": "#6366f1"}, {"text": "Emma Clark", "size": 22, "email": "U020", "color": "#10b981"}, {"text": "Lisa Anderson", "size": 18, "email": "U006", "color": "#f59e0b"}, {"text": "Sarah Chen", "size": 17, "email": "U002", "color": "#6366f1"}, {"text": "Chris Jackson", "size": 16, "email": "U015", "color": "#ef4444"}, {"text": "Ryan Thomas", "size": 15, "email": "U011", "color": "#10b981"}, {"text": "Mike Williams", "size": 13, "email": "U003", "color": "#6366f1"}, {"text": "Olivia Taylor", "size": 13, "email": "U010", "color": "#6366f1"}, {"text": "James Wilson", "size": 12, "email": "U005", "color": "#6366f1"}, {"text": "Emily Davis", "size": 11, "email": "U004", "color": "#6366f1"}, {"text": "David Martinez", "size": 10, "email": "U007", "color": "#f59e0b"}, {"text": "Maria Garcia", "size": 10, "email": "U012", "color": "#10b981"}, {"text": "Amy White", "size": 10, "email": "U016", "color": "#ef4444"}, {"text": "Rachel Kim", "size": 9, "email": "U008", "color": "#f59e0b"}, {"text": "Nick Robinson", "size": 9, "email": "U019", "color": "#f59e0b"}, {"text": "Tom Brown", "size": 7, "email": "U009", "color": "#f59e0b"}, {"text": "Sophie Moore", "size": 7, "email": "U014", "color": "#10b981"}, {"text": "Kevin Lee", "size": 6, "email": "U013", "color": "#10b981"}, {"text": "Brian Harris", "size": 6, "email": "U017", "color": "#ef4444"}, {"text": "Grace Martin", "size": 5, "email": "U018", "color": "#ef4444"}], "channel_name": "sample-project", "days": 30, "timestamp": null};
+var network=null,allNodes=new vis.DataSet(),allEdges=new vis.DataSet(),focusedNode=null,clusteredCommunities=new Set(),currentView="network",nodeMap={};
+function el(t,a,c){var e=document.createElement(t);if(a)Object.keys(a).forEach(function(k){if(k==="textContent")e.textContent=a[k];else if(k==="className")e.className=a[k];else if(k.startsWith("on"))e.addEventListener(k.slice(2),a[k]);else e.setAttribute(k,a[k])});if(c)(Array.isArray(c)?c:[c]).forEach(function(x){if(typeof x==="string")e.appendChild(document.createTextNode(x));else if(x)e.appendChild(x)});return e}
+document.getElementById("btn-network").addEventListener("click",function(){switchView("network")});
+document.getElementById("btn-wordcloud").addEventListener("click",function(){switchView("wordcloud")});
+window.addEventListener("DOMContentLoaded",function(){DATA.nodes.forEach(function(n){nodeMap[n.id]=n});init()});
+function init(){var th=document.getElementById("toolbar").offsetHeight||44;var mh=window.innerHeight-th;document.getElementById("main").style.height=mh+"px";document.getElementById("network-container").style.height=mh+"px";window.addEventListener("resize",function(){var h=window.innerHeight-(document.getElementById("toolbar").offsetHeight||44);document.getElementById("main").style.height=h+"px";document.getElementById("network-container").style.height=h+"px";if(network)network.redraw()});document.getElementById("stat-nodes").textContent=DATA.analysis.total_nodes+" nodes";document.getElementById("stat-edges").textContent=DATA.analysis.total_edges+" edges";document.getElementById("stat-communities").textContent=DATA.communities.length+" communities";var vn=DATA.nodes.map(function(n){return{id:n.id,label:n.label,color:{background:n.color,border:n.is_cc_key?"#f59e0b":(n.is_hub?"#fff":n.color),highlight:{background:"#fff",border:n.color}},size:n.size,font:{color:"#ddd",size:11,face:"sans-serif"},borderWidth:n.is_cc_key||n.is_hub?3:1,shape:"dot"}});var ve=DATA.edges.map(function(e,i){return{id:"e"+i,from:e.from,to:e.to,width:e.width,color:{color:"#ffffff18",highlight:"#6366f1",hover:"#6366f188"},arrows:{to:{enabled:true,scaleFactor:0.4}},smooth:{type:"continuous"}}});allNodes.add(vn);allEdges.add(ve);var c=document.getElementById("network-container");network=new vis.Network(c,{nodes:allNodes,edges:allEdges},{physics:{solver:"barnesHut",barnesHut:{gravitationalConstant:-3000,centralGravity:0.1,springLength:120,springConstant:0.02,damping:0.3},stabilization:{iterations:200}},interaction:{hover:true,tooltipDelay:200,zoomView:true,dragView:true},layout:{improvedLayout:true}});network.on("click",onNodeClick);network.on("doubleClick",onDoubleClick);network.on("afterDrawing",drawConvexHulls);renderLegend()}
+function onNodeClick(p){if(p.nodes.length===0){if(focusedNode)resetView();return}var id=p.nodes[0];if(network.isCluster(id))return;focusNode(id)}
+function focusNode(nodeId){var node=nodeMap[nodeId];if(!node)return;focusedNode=nodeId;var ce=DATA.edges.filter(function(e){return e.from===nodeId||e.to===nodeId});var cn=new Set([nodeId]);ce.forEach(function(e){cn.add(e.from);cn.add(e.to)});var fn=DATA.nodes.filter(function(n){return cn.has(n.id)}).map(function(n){return{id:n.id,label:n.label,color:{background:n.id===nodeId?"#fff":n.color,border:n.id===nodeId?n.color:(n.is_cc_key?"#f59e0b":n.color),highlight:{background:"#fff",border:n.color}},size:n.id===nodeId?n.size*1.5:n.size,font:{color:"#ddd",size:n.id===nodeId?14:11,face:"sans-serif"},borderWidth:n.id===nodeId?4:(n.is_cc_key||n.is_hub?3:1),shape:"dot"}});var fe=ce.map(function(e,i){return{id:"fe"+i,from:e.from,to:e.to,width:e.width,color:{color:"#ffffff30",highlight:"#6366f1",hover:"#6366f188"},arrows:{to:{enabled:true,scaleFactor:0.4}},smooth:{type:"continuous"}}});allNodes.clear();allEdges.clear();allNodes.add(fn);allEdges.add(fe);network.fit({animation:{duration:400,easingFunction:"easeInOutQuad"}});updateBreadcrumb(node.name);showSidePanel(nodeId)}
+function resetView(){focusedNode=null;var vn=DATA.nodes.map(function(n){return{id:n.id,label:n.label,color:{background:n.color,border:n.is_cc_key?"#f59e0b":(n.is_hub?"#fff":n.color),highlight:{background:"#fff",border:n.color}},size:n.size,font:{color:"#ddd",size:11,face:"sans-serif"},borderWidth:n.is_cc_key||n.is_hub?3:1,shape:"dot"}});var ve=DATA.edges.map(function(e,i){return{id:"e"+i,from:e.from,to:e.to,width:e.width,color:{color:"#ffffff18",highlight:"#6366f1",hover:"#6366f188"},arrows:{to:{enabled:true,scaleFactor:0.4}},smooth:{type:"continuous"}}});allNodes.clear();allEdges.clear();allNodes.add(vn);allEdges.add(ve);network.fit({animation:{duration:400,easingFunction:"easeInOutQuad"}});updateBreadcrumb(null);document.getElementById("side-panel").classList.remove("open")}
+function updateBreadcrumb(name){var bc=document.getElementById("breadcrumb");while(bc.firstChild)bc.removeChild(bc.firstChild);if(!name){bc.appendChild(el("span",{className:"current",textContent:"All"}))}else{bc.appendChild(el("a",{className:"bc-link",textContent:"All",onclick:resetView}));bc.appendChild(el("span",{className:"sep",textContent:" > "}));bc.appendChild(el("span",{className:"current",textContent:name}))}}
+function showSidePanel(nodeId){var node=nodeMap[nodeId];if(!node)return;var panel=document.getElementById("side-panel");while(panel.firstChild)panel.removeChild(panel.firstChild);var header=el("div",{className:"panel-header"},[el("div",{className:"panel-name",textContent:node.name}),buildEmailRow(node.email)]);panel.appendChild(header);if(node.is_cc_key||node.is_hub){var bd=el("div",{className:"panel-badges"});if(node.is_cc_key)bd.appendChild(el("span",{className:"badge badge-cc",textContent:"Passive Observer"}));if(node.is_hub)bd.appendChild(el("span",{className:"badge badge-hub",textContent:"Hub"}));panel.appendChild(bd)}var stats=el("div",{className:"panel-stats"},[buildStatBox(node.sent,"Mentions"),buildStatBox(node.received,"Mentioned"),buildStatBox(node.cc_count,"Reactions")]);panel.appendChild(stats);var toE=DATA.edges.filter(function(e){return e.from===nodeId&&e.to_weight>0});var ccE=DATA.edges.filter(function(e){return e.from===nodeId&&e.cc_weight>0});var frE=DATA.edges.filter(function(e){return e.to===nodeId});var toL=toE.map(function(e){return{email:e.to,name:(nodeMap[e.to]||{}).name||e.to,count:e.to_weight}}).sort(function(a,b){return b.count-a.count});var ccL=ccE.map(function(e){return{email:e.to,name:(nodeMap[e.to]||{}).name||e.to,count:e.cc_weight}}).sort(function(a,b){return b.count-a.count});var frL=frE.map(function(e){return{email:e.from,name:(nodeMap[e.from]||{}).name||e.from,count:e.to_weight+e.cc_weight}}).sort(function(a,b){return b.count-a.count});if(toL.length>0)panel.appendChild(buildSection("Mentioned",toL));if(ccL.length>0)panel.appendChild(buildSection("Reacted To",ccL));if(frL.length>0)panel.appendChild(buildSection("Received From",frL));panel.classList.add("open")}
+function buildEmailRow(email){var row=el("div",{className:"panel-email-row"});row.appendChild(el("span",{textContent:email}));var btn=el("button",{className:"copy-btn",textContent:"Copy",onclick:function(){navigator.clipboard.writeText(email).then(function(){btn.textContent="Copied!";setTimeout(function(){btn.textContent="Copy"},1500)})}});row.appendChild(btn);return row}
+function buildStatBox(v,l){return el("div",{className:"stat-box"},[el("div",{className:"stat-value",textContent:String(v)}),el("div",{className:"stat-label",textContent:l})])}
+function buildSection(title,items){var sec=el("div",{className:"panel-section"});var tog=el("div",{className:"section-toggle"},[el("span",{textContent:title+" ("+items.length+")"}),el("span",{className:"arrow",textContent:"\u25B6"})]);var list=el("div",{className:"section-list"});tog.addEventListener("click",function(){tog.classList.toggle("open");list.classList.toggle("open")});items.forEach(function(item){var row=el("div",{className:"section-item"},[el("span",{textContent:item.name}),el("span",{className:"count",textContent:String(item.count)})]);row.addEventListener("click",function(){focusNode(item.email)});list.appendChild(row)});sec.appendChild(tog);sec.appendChild(list);return sec}
+function drawConvexHulls(ctx){if(focusedNode)return;var pos=network.getPositions();if(!pos||Object.keys(pos).length===0)return;DATA.communities.forEach(function(comm){if(comm.size<3)return;if(clusteredCommunities.has(comm.id))return;var pts=[];comm.members.forEach(function(m){var p=pos[m.email];if(p)pts.push([p.x,p.y])});if(pts.length<3)return;var hull=grahamScan(pts);if(hull.length<3)return;var cx=hull.reduce(function(s,p){return s+p[0]},0)/hull.length;var cy=hull.reduce(function(s,p){return s+p[1]},0)/hull.length;var pad=40;ctx.beginPath();hull.forEach(function(p,i){var dx=p[0]-cx,dy=p[1]-cy,d=Math.sqrt(dx*dx+dy*dy);var ox=p[0]+(d>0?dx/d*pad:0),oy=p[1]+(d>0?dy/d*pad:0);if(i===0)ctx.moveTo(ox,oy);else ctx.lineTo(ox,oy)});ctx.closePath();ctx.fillStyle=comm.color+"14";ctx.fill();ctx.strokeStyle=comm.color+"26";ctx.lineWidth=1;ctx.stroke()})}
+function grahamScan(pts){if(pts.length<3)return pts.slice();var lo=0;for(var i=1;i<pts.length;i++){if(pts[i][1]<pts[lo][1]||(pts[i][1]===pts[lo][1]&&pts[i][0]<pts[lo][0]))lo=i}var t=pts[0];pts[0]=pts[lo];pts[lo]=t;var pv=pts[0];var s=pts.slice(1).sort(function(a,b){return Math.atan2(a[1]-pv[1],a[0]-pv[0])-Math.atan2(b[1]-pv[1],b[0]-pv[0])});var st=[pv,s[0]];for(var i=1;i<s.length;i++){while(st.length>1&&crossProduct(st[st.length-2],st[st.length-1],s[i])<=0)st.pop();st.push(s[i])}return st}
+function crossProduct(o,a,b){return(a[0]-o[0])*(b[1]-o[1])-(a[1]-o[1])*(b[0]-o[0])}
+function onDoubleClick(p){if(p.nodes.length===0)return;var id=p.nodes[0];if(network.isCluster(id)){network.openCluster(id);var ci=parseInt(id.replace("cluster_",""),10);clusteredCommunities.delete(ci);return}var node=nodeMap[id];if(!node)return;var ci=node.community;var comm=DATA.communities[ci];if(!comm||comm.size<2)return;var me=new Set(comm.members.map(function(m){return m.email}));network.cluster({joinCondition:function(o){return me.has(o.id)},clusterNodeProperties:{id:"cluster_"+ci,label:"Cluster "+ci+" ("+comm.size+")",color:{background:comm.color,border:comm.color},size:30,shape:"dot",font:{color:"#ddd",size:13},borderWidth:2}});clusteredCommunities.add(ci)}
+function switchView(v){currentView=v;var nc=document.getElementById("network-container");var wc=document.getElementById("wordcloud-container");var bn=document.getElementById("btn-network");var bw=document.getElementById("btn-wordcloud");var lg=document.getElementById("legend");if(v==="network"){nc.style.display="block";wc.style.display="none";bn.classList.add("active");bw.classList.remove("active");lg.style.display="block";if(network)network.redraw()}else{nc.style.display="none";wc.style.display="block";bn.classList.remove("active");bw.classList.add("active");lg.style.display="none";renderWordCloud()}}
+function renderWordCloud(){var cv=document.getElementById("wordcloud-canvas");var ct=document.getElementById("wordcloud-container");cv.width=ct.clientWidth;cv.height=ct.clientHeight;if(DATA.wordcloud_data.length===0)return;var mx=Math.max.apply(null,DATA.wordcloud_data.map(function(d){return d.size}));var mnF=12,mxF=Math.min(80,cv.height/4);var list=DATA.wordcloud_data.map(function(d){return[d.text,mnF+(d.size/mx)*(mxF-mnF)]});var cm={};DATA.wordcloud_data.forEach(function(d){cm[d.text]=d.color});WordCloud(cv,{list:list,gridSize:8,weightFactor:1,fontFamily:"-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif",color:function(w){return cm[w]||"#6366f1"},backgroundColor:"#1a1a2e",rotateRatio:0.1,click:function(item){var e=DATA.wordcloud_data.find(function(d){return d.text===item[0]});if(e){switchView("network");setTimeout(function(){focusNode(e.email)},300)}}})}
+function renderLegend(){var c=document.getElementById("legend");while(c.firstChild)c.removeChild(c.firstChild);c.appendChild(el("h4",{textContent:"Communities"}));DATA.communities.forEach(function(comm){var names=comm.members.slice(0,3).map(function(m){return m.name}).join(", ");if(comm.size>3)names+=" +"+(comm.size-3);var item=el("div",{className:"legend-item"},[el("div",{className:"legend-dot",style:"background:"+comm.color}),el("span",{textContent:names})]);item.addEventListener("click",function(){highlightCommunity(comm.id)});c.appendChild(item)});if(DATA.analysis.cc_key_persons.length>0){c.appendChild(el("h4",{textContent:"Passive Observers",style:"margin-top:10px"}));DATA.analysis.cc_key_persons.forEach(function(p){var item=el("div",{className:"legend-item"},[el("div",{className:"legend-dot",style:"background:#f59e0b"}),el("span",{textContent:p.name+" ("+p.cc_count+")"})]);item.addEventListener("click",function(){focusNode(p.email)});c.appendChild(item)})}}
+function highlightCommunity(ci){var comm=DATA.communities[ci];if(!comm)return;var ids=comm.members.map(function(m){return m.email});network.selectNodes(ids);network.fit({nodes:ids,animation:{duration:400,easingFunction:"easeInOutQuad"}})}
+
+</script>
+</body>
+</html>
