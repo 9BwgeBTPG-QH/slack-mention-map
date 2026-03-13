@@ -5,7 +5,7 @@
 A tool that visualizes mention relationships within Slack channels as a network graph.
 It analyzes communication structures from three types of interactions — @mentions, thread replies, and reactions — to detect communities and identify key persons.
 
-**[View Demo (Sample Data)](https://9BwgeBTPG-QH.github.io/slack-mention-map/)** — Explore the dashboard with fictional team data.
+**[View Demo (Sample Data)](https://9BwgeBTPG-QH.github.io/slack-mention-map/index_en.html)** — Explore the dashboard with fictional team data.
 
 ## Features
 
