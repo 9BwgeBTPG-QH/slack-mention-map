@@ -44,3 +44,5 @@ Thumbs.db
 .env
 ref/
 .claude/
+zenn-article.md
+generate_sample.py
