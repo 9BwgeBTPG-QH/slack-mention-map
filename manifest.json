@@ -1,0 +1,37 @@
+{
+  "display_information": {
+    "name": "Mention Map",
+    "description": "チャンネル内のメンション関係をネットワークグラフで可視化",
+    "background_color": "#1a1a2e"
+  },
+  "features": {
+    "bot_user": {
+      "display_name": "mention-map",
+      "always_online": false
+    },
+    "slash_commands": [
+      {
+        "command": "/mention-map",
+        "description": "チャンネル内のメンション関係を可視化します",
+        "usage_hint": "[日数]（省略可能、デフォルト30日）",
+        "should_escape": false
+      }
+    ]
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history",
+        "channels:read",
+        "chat:write",
+        "im:write",
+        "users:read",
+        "commands"
+      ]
+    }
+  },
+  "settings": {
+    "socket_mode_enabled": true,
+    "token_rotation_enabled": false
+  }
+}

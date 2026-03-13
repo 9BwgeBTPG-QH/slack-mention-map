@@ -65,25 +65,33 @@ networkx
 
 1. リポジトリをクローン:
 ```bash
-git clone https://github.com/yourusername/slack-mention-map.git
+git clone https://github.com/9BwgeBTPG-QH/slack-mention-map.git
 cd slack-mention-map
 ```
 
 2. 必要なパッケージをインストール:
 ```bash
-pip install slack-bolt slack-sdk python-dotenv pandas networkx
+pip install -r requirements.txt
 ```
 
-## Slack API でアプリを作成
+## Slack App のセットアップ
+
+### 方法1: App Manifest を使う（推奨）
 
 1. [Slack API](https://api.slack.com/apps) にアクセスし、「Create New App」をクリック
-2. 「From scratch」を選択
-3. アプリ名（例: "mention-map"）とワークスペースを選択して「Create App」をクリック
+2. 「From an app manifest」を選択
+3. ワークスペースを選択
+4. リポジトリに含まれる `manifest.json` の内容を貼り付けて「Create」をクリック
 
-## アプリの権限設定
+### 方法2: 手動で設定する
 
-「OAuth & Permissions」セクションで以下の Bot Token Scopes を追加:
+<details>
+<summary>手動設定の手順を表示</summary>
 
+1. [Slack API](https://api.slack.com/apps) にアクセスし、「Create New App」→「From scratch」を選択
+2. アプリ名（例: "mention-map"）とワークスペースを選択して「Create App」をクリック
+
+**Bot Token Scopes**（「OAuth & Permissions」セクション）:
 - `channels:history` - チャンネルのメッセージ履歴を読み取る
 - `channels:read` - チャンネル情報を読み取る
 - `chat:write` - メッセージを送信する
@@ -91,57 +99,40 @@ pip install slack-bolt slack-sdk python-dotenv pandas networkx
 - `users:read` - ユーザー情報を読み取る
 - `commands` - スラッシュコマンドを使用する
 
-## スラッシュコマンドの設定
-
-「Slash Commands」セクションで「Create New Command」をクリック:
-
+**Slash Commands**:
 - Command: `/mention-map`
-- Request URL: Socket Mode を使用するため不要
 - Short Description: チャンネル内のメンション関係を可視化します
 - Usage Hint: [日数]（省略可能）
 
-## Socket Mode の有効化
+**Socket Mode**: 「Socket Mode」セクションで有効化
+</details>
 
-1. 「Socket Mode」セクションで「Enable Socket Mode」をオン
+### トークンの取得
+
+1. 「Socket Mode」→「Enable Socket Mode」をオン
 2. 「Basic Information」→「App-Level Tokens」で新しいトークンを生成
    - トークン名を入力（例：`socket-token`）
    - 必要なスコープ（`connections:write`）を選択
 3. 生成された App Token（`xapp-` で始まる）をメモ
+4. 「Install App」→「Install to Workspace」をクリック
+5. Bot User OAuth Token（`xoxb-` で始まる）をメモ
 
-## アプリをワークスペースにインストール
+### 環境変数の設定
 
-1. 「Install App」セクションで「Install to Workspace」をクリック
-2. インストール後、Bot User OAuth Token（`xoxb-` で始まる）をメモ
+`.env.example` をコピーしてトークンを設定:
 
-## 環境変数の設定
+```bash
+cp .env.example .env
+```
 
-プロジェクトのルートディレクトリに `.env` ファイルを作成:
+`.env` を編集して実際のトークンを設定:
 
 ```env
 SLACK_BOT_TOKEN=xoxb-your-bot-token
 SLACK_APP_TOKEN=xapp-your-app-token
 ```
 
-### 分析パラメータ（オプション）
-
-`.env` ファイルで分析の閾値を調整できます:
-
-```env
-# CC キーマン (Passive Observer) 検出閾値 (デフォルト: 0.30)
-MENTION_MAP_CC_THRESHOLD=0.30
-
-# エッジ表示の最小重み (デフォルト: 1)。大きくするとノイズが減る
-MENTION_MAP_MIN_EDGE_WEIGHT=1
-
-# ハブスコアの Degree centrality 重み (デフォルト: 0.5)
-MENTION_MAP_HUB_DEGREE_W=0.5
-
-# ハブスコアの Betweenness centrality 重み (デフォルト: 0.5)
-MENTION_MAP_HUB_BETWEEN_W=0.5
-
-# 社内ドメインリスト (カンマ区切り)。設定しない場合は全員社内扱い
-MENTION_MAP_COMPANY_DOMAINS=example.co.jp,other.com
-```
+分析パラメータのオプションについては `.env.example` 内のコメントを参照してください。
 
 ## 使い方
 
@@ -189,7 +180,10 @@ slack-mention-map/
 ├── slack-mention-map.py   Slack Bot + HTTP サーバー + データ変換
 ├── core.py                分析パイプライン (NetworkX + Louvain + Centrality)
 ├── template.html          ダッシュボード UI (vis.js + wordcloud2.js)
-└── .env                   Slack トークン + 分析パラメータ
+├── manifest.json          Slack App Manifest（セットアップ用）
+├── requirements.txt       Python パッケージ一覧
+├── .env.example           環境変数テンプレート
+└── .env                   Slack トークン + 分析パラメータ（要作成）
 ```
 
 ## 技術スタック

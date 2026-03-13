@@ -1,0 +1,5 @@
+slack-bolt
+slack-sdk
+python-dotenv
+pandas
+networkx
