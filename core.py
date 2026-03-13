@@ -116,16 +116,16 @@ def parse_address_field(field: str) -> list[tuple[str, str]]:
 # Graph construction
 # ---------------------------------------------------------------------------
 
-def build_graph(df: pd.DataFrame, config: dict | None = None) -> nx.DiGraph:
+def build_graph(df: pd.DataFrame, config: dict | None = None, domain_map: dict | None = None) -> nx.DiGraph:
     """メッセージ DataFrame から有向グラフを構築.
 
-    Slack 版の変更:
-      - from_email は Slack user ID
-      - domain は空文字 (Slack では単一ワークスペース)
-      - is_internal はデフォルト True
+    Args:
+      domain_map: user_id → email domain のマッピング (省略時は from_domain カラムから取得)
     """
     if config is None:
         config = DEFAULT_CONFIG
+    if domain_map is None:
+        domain_map = {}
 
     G = nx.DiGraph()
     company_domains = [d.lower() for d in config.get("company_domains", [])]
@@ -142,9 +142,13 @@ def build_graph(df: pd.DataFrame, config: dict | None = None) -> nx.DiGraph:
         if not from_id:
             continue
 
+        from_domain = str(row.get("from_domain", "")).strip() if pd.notna(row.get("from_domain")) else ""
+
         # 送信者ノード
         node_stats[from_id]["name"] = from_name or node_stats[from_id]["name"]
         node_stats[from_id]["email"] = from_id
+        if from_domain:
+            node_stats[from_id]["domain"] = from_domain
         node_stats[from_id]["sent"] += 1
 
         # To 受信者
@@ -152,6 +156,8 @@ def build_graph(df: pd.DataFrame, config: dict | None = None) -> nx.DiGraph:
         for to_id, to_name in to_addrs:
             node_stats[to_id]["name"] = to_name or node_stats[to_id]["name"]
             node_stats[to_id]["email"] = to_id
+            if to_id in domain_map and not node_stats[to_id]["domain"]:
+                node_stats[to_id]["domain"] = domain_map[to_id]
             node_stats[to_id]["received"] += 1
 
             if G.has_edge(from_id, to_id):
@@ -164,6 +170,8 @@ def build_graph(df: pd.DataFrame, config: dict | None = None) -> nx.DiGraph:
         for cc_id, cc_name in cc_addrs:
             node_stats[cc_id]["name"] = cc_name or node_stats[cc_id]["name"]
             node_stats[cc_id]["email"] = cc_id
+            if cc_id in domain_map and not node_stats[cc_id]["domain"]:
+                node_stats[cc_id]["domain"] = domain_map[cc_id]
             node_stats[cc_id]["cc_count"] += 1
 
             if G.has_edge(from_id, cc_id):
@@ -388,7 +396,7 @@ def generate_vis_data(G: nx.DiGraph, analysis: dict, config: dict | None = None)
     }
 
 
-def run_analysis_pipeline(df: pd.DataFrame, config: dict | None = None) -> dict:
+def run_analysis_pipeline(df: pd.DataFrame, config: dict | None = None, domain_map: dict | None = None) -> dict:
     """DataFrame → グラフ構築 → 分析 → vis.js JSON の一括実行.
 
     Returns:
@@ -397,7 +405,7 @@ def run_analysis_pipeline(df: pd.DataFrame, config: dict | None = None) -> dict:
     if config is None:
         config = load_config_from_env()
 
-    G = build_graph(df, config)
+    G = build_graph(df, config, domain_map)
     total_mails = len(df)
     analysis = analyze_graph(G, total_mails, config)
     vis_data = generate_vis_data(G, analysis, config)

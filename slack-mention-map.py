@@ -19,6 +19,8 @@ from slack_sdk.errors import SlackApiError
 
 from core import run_analysis_pipeline
 
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # ---------------------------------------------------------------------------
 # Slack API ヘルパー: Rate limit リトライ
 # ---------------------------------------------------------------------------
@@ -77,6 +79,7 @@ global_data = {
 
 # 分析パイプラインの排他ロック（同時実行防止）
 _analysis_lock = threading.Lock()
+_data_lock = threading.Lock()
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +105,7 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     def _serve_template(self):
         """template.html を配信"""
         try:
-            with open("template.html", "rb") as f:
+            with open(os.path.join(_SCRIPT_DIR, "template.html"), "rb") as f:
                 content = f.read()
             self.send_response(200)
             self.send_header("Content-type", "text/html; charset=utf-8")
@@ -116,17 +119,18 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
     def _serve_vis_data(self):
         """vis.js ネットワークグラフ用 JSON を配信"""
         try:
-            vis_data = global_data.get("vis_data")
-            if not vis_data:
-                self._send_json(404, {"error": "No data available. Run /mention-map first."})
-                return
+            with _data_lock:
+                vis_data = global_data.get("vis_data")
+                if not vis_data:
+                    self._send_json(404, {"error": "No data available. Run /mention-map first."})
+                    return
 
-            response_data = {
-                **vis_data,
-                "channel_name": global_data.get("channel_name", ""),
-                "days": global_data.get("days", 30),
-                "timestamp": global_data.get("timestamp"),
-            }
+                response_data = {
+                    **vis_data,
+                    "channel_name": global_data.get("channel_name", ""),
+                    "days": global_data.get("days", 30),
+                    "timestamp": global_data.get("timestamp"),
+                }
             self._send_json(200, response_data)
         except Exception as e:
             print(f"Error serving vis-data: {e}")
@@ -138,7 +142,6 @@ class DashboardHandler(http.server.SimpleHTTPRequestHandler):
         self.send_response(status)
         self.send_header("Content-type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(encoded)))
-        self.send_header("Access-Control-Allow-Origin", "*")
         self.end_headers()
         self.wfile.write(encoded)
 
@@ -296,7 +299,7 @@ def mention_map_command(ack, command, client):
         )
 
         # Dot-connect 分析パイプライン実行
-        vis_data = run_analysis_pipeline(df)
+        vis_data = run_analysis_pipeline(df, domain_map=_user_domain_cache)
         n_nodes = vis_data["analysis"]["total_nodes"]
         n_edges = vis_data["analysis"]["total_edges"]
         n_communities = len(vis_data["communities"])
@@ -317,12 +320,13 @@ def mention_map_command(ack, command, client):
         channel_name = channel_info["channel"]["name"]
 
         # グローバル変数にデータを格納
-        global_data["channel_name"] = channel_name
-        global_data["days"] = days
-        global_data["timestamp"] = datetime.now().timestamp()
-        global_data["dataframe"] = df
-        global_data["user_cache"] = user_cache
-        global_data["vis_data"] = vis_data
+        with _data_lock:
+            global_data["channel_name"] = channel_name
+            global_data["days"] = days
+            global_data["timestamp"] = datetime.now().timestamp()
+            global_data["dataframe"] = df
+            global_data["user_cache"] = user_cache
+            global_data["vis_data"] = vis_data
 
         browser_url = f"http://localhost:{HTTP_PORT}"
 
@@ -484,11 +488,18 @@ def resolve_user(client, user_id, user_cache):
     try:
         user_info = slack_api_call(client.users_info, user=user_id)
         name = user_info["user"]["real_name"]
+        email = user_info["user"].get("profile", {}).get("email", "")
     except Exception as e:
         print(f"Warning: Could not get user info for {user_id}: {e}")
         name = f"User {user_id}"
+        email = ""
     user_cache[user_id] = name
+    if email:
+        _user_domain_cache[user_id] = email.split("@")[-1].lower()
     return name
+
+
+_user_domain_cache = {}
 
 
 def build_dataframe(
@@ -575,6 +586,7 @@ def build_dataframe(
             "date": date_str,
             "from_email": sender_id,
             "from_name": sender_name,
+            "from_domain": _user_domain_cache.get(sender_id, ""),
             "to": "; ".join(to_entries),
             "cc": "; ".join(cc_entries),
             "subject": subject,
@@ -633,6 +645,7 @@ def build_dataframe(
                 "date": reply_date,
                 "from_email": reply_sender_id,
                 "from_name": reply_sender_name,
+                "from_domain": _user_domain_cache.get(reply_sender_id, ""),
                 "to": "; ".join(reply_to),
                 "cc": "; ".join(reply_cc),
                 "subject": parent_text,
@@ -656,12 +669,12 @@ def build_dataframe(
 if __name__ == "__main__":
     print("Starting application...")
 
+    # サーバーインスタンスを作成
+    dashboard_server = DashboardServer(HTTP_PORT)
+
     # シグナルハンドラーを設定（メインスレッドで）
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
-
-    # サーバーインスタンスを作成
-    dashboard_server = DashboardServer(HTTP_PORT)
 
     try:
         dashboard_server.start()

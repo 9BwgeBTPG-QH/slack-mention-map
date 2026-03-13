@@ -683,7 +683,7 @@ function buildEmailRow(email) {
       navigator.clipboard.writeText(email).then(function() {
         btn.textContent = 'Copied!';
         setTimeout(function() { btn.textContent = 'Copy'; }, 1500);
-      });
+      }).catch(function() {});
     }
   });
   row.appendChild(btn);
@@ -991,7 +991,7 @@ function exportHTML() {
   var html = '<!DOCTYPE html>\n<html lang="ja" style="height:100%;margin:0;padding:0;">\n<head>\n'
     + '<meta charset="UTF-8">\n'
     + '<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
-    + '<title>#' + channelName + ' - Slack メンション分析 (' + days + '日間)</title>\n'
+    + '<title>#' + escapeHtml(channelName) + ' - Slack メンション分析 (' + days + '日間)</title>\n'
     + '<script src="https://unpkg.com/vis-network@9.1.6/standalone/umd/vis-network.min.js"><\/script>\n'
     + '<script src="https://cdnjs.cloudflare.com/ajax/libs/wordcloud2.js/1.1.2/wordcloud2.min.js"><\/script>\n'
     + '<style>\n' + css + '\n</style>\n'
@@ -1017,7 +1017,7 @@ function exportHTML() {
     + '</div>\n'
     + '<div id="legend" style="position:absolute;bottom:12px;left:12px;background:#16213eee;border:1px solid #0f3460;border-radius:8px;padding:10px 14px;font-size:12px;z-index:200;"></div>\n'
     + '<script>\n'
-    + 'var DATA = ' + JSON.stringify(DATA) + ';\n'
+    + 'var DATA = ' + JSON.stringify(DATA).replace(/<\//g, '<\\/') + ';\n'
     + getScriptBody()
     + '\n<\/script>\n'
     + '</body>\n</html>';
@@ -1281,7 +1281,5 @@ function highlightCommunityFn() {
   + 'network.fit({nodes:ids,animation:{duration:400,easingFunction:"easeInOutQuad"}})}\n';
 }
 </script>
-</body>
-</html>
 </body>
 </html>

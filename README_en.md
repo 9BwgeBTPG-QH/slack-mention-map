@@ -103,6 +103,7 @@ pip install -r requirements.txt
 - `chat:write` — Send messages
 - `im:write` — Send direct messages
 - `users:read` — Read user information
+- `users:read.email` — Read user email addresses (required when using `COMPANY_DOMAINS`)
 - `commands` — Use slash commands
 
 **Slash Commands**:

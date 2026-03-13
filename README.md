@@ -103,6 +103,7 @@ pip install -r requirements.txt
 - `chat:write` — メッセージを送信する
 - `im:write` — DMを送信する
 - `users:read` — ユーザー情報を読み取る
+- `users:read.email` — ユーザーのメールアドレスを読み取る（`COMPANY_DOMAINS` 設定使用時に必要）
 - `commands` — スラッシュコマンドを使用する
 
 **Slash Commands**:
